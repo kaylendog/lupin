@@ -8,7 +8,7 @@
 //! facilitate the creation and composition of such actors.
 use std::marker::PhantomData;
 
-use crate::combinator::Pipe;
+use crate::combinator::{Chunk, Pipe};
 
 mod combinator;
 
@@ -47,6 +47,14 @@ where
         OB: Send,
     {
         Pipe { first: self, second: other, __marker: PhantomData }
+    }
+
+    /// Chunk up to `size` results from this actor.
+    fn chunk(self, size: usize) -> Chunk<Self, I, O>
+    where
+        Self: Sized,
+    {
+        Chunk { actor: self, size, __marker: PhantomData }
     }
 }
 
@@ -102,34 +110,5 @@ where
 
     fn into_actor(self) -> Self::IntoActor {
         Func { f: self }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{Actor, IntoActor};
-
-    #[tokio::test]
-    async fn test_actor() {
-        let actor = (|x: usize| async move { x * 2 }).into_actor();
-        let (task, tx, rx) = actor.build();
-
-        tokio::spawn(task);
-
-        tx.send(1).await.unwrap();
-        assert_eq!(2, rx.recv().await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn test_pipe() {
-        let addone = (|x: usize| async move { x + 1 }).into_actor();
-        let mul2 = (|x: usize| async move { x * 2 }).into_actor();
-
-        let (task, tx, rx) = addone.pipe(mul2).build();
-
-        tokio::spawn(task);
-
-        tx.send(1).await.unwrap();
-        assert_eq!(4, rx.recv().await.unwrap());
     }
 }

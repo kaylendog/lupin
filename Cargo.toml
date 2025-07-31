@@ -3,9 +3,16 @@ name = "fenrir"
 version = "0.1.0"
 edition = "2024"
 
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
+
 [dependencies]
 async-channel = "2.5.0"
 futures-lite = "2.6.0"
+tokio = { version = "1.47.0", features = ["rt", "macros"], optional = true }
+
 
 [dev-dependencies]
 tokio = { version = "1.47.0", features = ["rt", "macros"] }
