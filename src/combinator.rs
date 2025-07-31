@@ -1,3 +1,5 @@
+//! Combinatorial actors that enable larger systems to be built by connecting actors together.
+
 use std::{iter::repeat_n, marker::PhantomData};
 
 use futures_concurrency::future::Join;
@@ -7,13 +9,13 @@ use itertools::Itertools;
 use crate::Actor;
 
 #[derive(Clone)]
-pub struct Pipe<A, B, I, IO, O> {
+pub struct Pipe<A, B, IO> {
     pub(crate) first: A,
     pub(crate) second: B,
-    pub(crate) __marker: PhantomData<(I, IO, O)>,
+    pub(crate) __marker: PhantomData<IO>,
 }
 
-impl<A, B, I, IO, O> Actor<I, O> for Pipe<A, B, I, IO, O>
+impl<A, B, I, IO, O> Actor<I, O> for Pipe<A, B, IO>
 where
     A: Actor<I, IO>,
     B: Actor<IO, O>,
@@ -35,14 +37,19 @@ where
     }
 }
 
-#[derive(Clone)]
-pub struct Chunk<A, I, O> {
-    pub(crate) actor: A,
-    pub(crate) size: usize,
-    pub(crate) __marker: PhantomData<(I, O)>,
+/// Pipe the output of one actor into another.
+pub fn pipe<A, B, IO>(first: A, second: B) -> Pipe<A, B, IO> {
+    Pipe { first, second, __marker: PhantomData }
 }
 
-impl<A, I, O> Actor<I, Vec<O>> for Chunk<A, I, O>
+/// Collect inputs into variable-size chunks.
+#[derive(Clone)]
+pub struct Chunk<A> {
+    pub(crate) actor: A,
+    pub(crate) size: usize,
+}
+
+impl<A, I, O> Actor<I, Vec<O>> for Chunk<A>
 where
     A: Actor<I, O>,
     I: Send,
@@ -70,15 +77,19 @@ where
     }
 }
 
-/// Run `n` instances of the given actor in parallel.
-#[derive(Clone)]
-pub struct Parallel<A, I, O> {
-    pub(crate) actor: A,
-    pub(crate) workers: usize,
-    pub(crate) __marker: PhantomData<(I, O)>,
+/// Pipe the output of one actor into another.
+pub fn chunk<A>(actor: A, size: usize) -> Chunk<A> {
+    Chunk { actor, size }
 }
 
-impl<A, I, O> Actor<I, O> for Parallel<A, I, O>
+/// Run `n` instances of the given actor in parallel.
+#[derive(Clone)]
+pub struct Parallel<A> {
+    pub(crate) actor: A,
+    pub(crate) workers: usize,
+}
+
+impl<A, I, O> Actor<I, O> for Parallel<A>
 where
     A: Actor<I, O> + Clone,
     I: Send,
@@ -137,7 +148,7 @@ where
 mod tests {
     use std::time::Duration;
 
-    use rand::{Rng, RngCore};
+    use rand::Rng;
 
     use crate::{Actor, IntoActor};
 

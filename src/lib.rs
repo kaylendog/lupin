@@ -10,7 +10,8 @@ use std::marker::PhantomData;
 
 use crate::combinator::{Chunk, Parallel, Pipe};
 
-mod combinator;
+pub mod combinator;
+pub mod numeric;
 
 /// A trait representing an asynchronous actor.
 ///
@@ -40,7 +41,7 @@ where
     ///
     /// # Returns
     /// A [`Pipe`] representing the composed pipeline.
-    fn pipe<B, OB>(self, other: B) -> Pipe<Self, B, I, O, OB>
+    fn pipe<B, OB>(self, other: B) -> Pipe<Self, B, O>
     where
         Self: Sized,
         B: Actor<O, OB>,
@@ -50,19 +51,19 @@ where
     }
 
     /// Chunk up to `size` results from this actor.
-    fn chunk(self, size: usize) -> Chunk<Self, I, O>
+    fn chunk(self, size: usize) -> Chunk<Self>
     where
         Self: Sized,
     {
-        Chunk { actor: self, size, __marker: PhantomData }
+        Chunk { actor: self, size }
     }
 
     /// Run this actor in parallel using `n` workers.
-    fn parallel(self, n: usize) -> Parallel<Self, I, O>
+    fn parallel(self, n: usize) -> Parallel<Self>
     where
         Self: Sized + Clone,
     {
-        Parallel { actor: self, workers: n, __marker: PhantomData }
+        Parallel { actor: self, workers: n }
     }
 }
 
