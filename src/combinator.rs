@@ -2,6 +2,7 @@ use std::{iter::repeat_n, marker::PhantomData};
 
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
+use itertools::Itertools;
 
 use crate::Actor;
 
@@ -113,14 +114,19 @@ where
             }
         };
 
-        let output_fut = async move {
-            loop {
-                for rx in &worker_outputs {
-                    if let Ok(output) = rx.try_recv() {
-                        out_tx.send(output).await.unwrap();
+        let output_fut = worker_outputs
+            .into_iter()
+            .map(|rx| {
+                let out_tx = out_tx.clone();
+                async move {
+                    loop {
+                        out_tx.send(rx.recv().await.unwrap()).await.unwrap()
                     }
                 }
-            }
+            })
+            .collect_vec();
+        let output_fut = async {
+            output_fut.join().await;
         };
 
         (poll_fut.or(input_fut).or(output_fut), in_tx, out_rx)
