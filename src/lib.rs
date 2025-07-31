@@ -10,6 +10,7 @@ use std::marker::PhantomData;
 
 use crate::combinator::{Chunk, Parallel, Pipe};
 
+pub mod buffer;
 pub mod combinator;
 pub mod numeric;
 
