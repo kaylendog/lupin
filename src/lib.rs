@@ -1,4 +1,4 @@
-//! An actor framework for the functionally inclined.
+//! A stupendously simple actor framework for the functionally inclined.
 //!
 //! Fenrir is a lightweight actor framework that provides abstractions for
 //! building and composing asynchronous systems.
