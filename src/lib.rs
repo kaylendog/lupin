@@ -1,26 +1,135 @@
-//! A runtime-agnostic composable actor framework.
+//! An actor framework for the functionally inclined.
 //!
-//! The actor model provides an abstraction over asynchronous systems using actors - modular processes that can:
+//! Fenrir is a lightweight actor framework that provides abstractions for
+//! building and composing asynchronous systems.
 //!
-//!  - Send and receive messages to other actors;
-//! - Create new actors and destroy old ones;
-//! - Update their internal state.
+//! An actor is a component that processes input messages and produces output
+//! messages asynchronously. This module defines traits and implementations to
+//! facilitate the creation and composition of such actors.
+use std::marker::PhantomData;
 
-mod actor;
-mod channel;
+use crate::combinator::Pipe;
+
 mod combinator;
-mod service;
 
-pub use actor::Actor;
-pub use combinator::repeat;
-pub use service::{Service, ServiceExt, once, source};
+/// A trait representing an asynchronous actor.
+///
+/// An actor processes input messages and produces output messages
+/// asynchronously. Actors can be composed into pipelines for more complex
+/// workflows.
+pub trait Actor<I, O>
+where
+    I: Send,
+    O: Send,
+{
+    /// Builds the actor into a task and communication channels.
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// - A future representing the actor's task.
+    /// - A sender for input messages.
+    /// - A receiver for output messages.
+    fn build(
+        self,
+    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>);
+
+    /// Composes this actor with another actor to form a pipeline.
+    ///
+    /// # Arguments
+    /// - `other`: The next actor in the pipeline.
+    ///
+    /// # Returns
+    /// A [`Pipe`] representing the composed pipeline.
+    fn pipe<B, OB>(self, other: B) -> Pipe<Self, B, I, O, OB>
+    where
+        Self: Sized,
+        B: Actor<O, OB>,
+        OB: Send,
+    {
+        Pipe { first: self, second: other, __marker: PhantomData }
+    }
+}
+
+/// A trait for converting an object into an actor.
+///
+/// This trait is useful for adapting functions or other objects into actors.
+pub trait IntoActor<I, O>
+where
+    I: Send,
+    O: Send,
+{
+    /// The type of actor produced by this conversion.
+    type IntoActor: Actor<I, O>;
+
+    /// Converts the object into an actor.
+    fn into_actor(self) -> Self::IntoActor;
+}
+
+/// A concrete implementation of an actor based on a function.
+pub struct Func<F> {
+    f: F,
+}
+
+impl<F, Fut, I, O> Actor<I, O> for Func<F>
+where
+    F: Fn(I) -> Fut,
+    Fut: Future<Output = O>,
+    I: Send,
+    O: Send,
+{
+    fn build(
+        self,
+    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+        let (in_tx, in_rx) = async_channel::unbounded();
+        let (out_tx, out_rx) = async_channel::unbounded();
+        let fut = async move {
+            loop {
+                out_tx.send((self.f)(in_rx.recv().await.unwrap()).await).await.unwrap();
+            }
+        };
+        (fut, in_tx, out_rx)
+    }
+}
+
+impl<F, Fut, I, O> IntoActor<I, O> for F
+where
+    F: Fn(I) -> Fut,
+    Fut: Future<Output = O>,
+    I: Send,
+    O: Send,
+{
+    type IntoActor = Func<F>;
+
+    fn into_actor(self) -> Self::IntoActor {
+        Func { f: self }
+    }
+}
 
 #[cfg(test)]
-mod test {
-    use crate::service::source;
+mod tests {
+    use crate::{Actor, IntoActor};
 
-    #[test]
-    fn test_pipe() {
-        let service = source(|_: ()| async { () });
+    #[tokio::test]
+    async fn test_actor() {
+        let actor = (|x: usize| async move { x * 2 }).into_actor();
+        let (task, tx, rx) = actor.build();
+
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        assert_eq!(2, rx.recv().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_pipe() {
+        let addone = (|x: usize| async move { x + 1 }).into_actor();
+        let mul2 = (|x: usize| async move { x * 2 }).into_actor();
+
+        let (task, tx, rx) = addone.pipe(mul2).build();
+
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        assert_eq!(4, rx.recv().await.unwrap());
     }
 }
