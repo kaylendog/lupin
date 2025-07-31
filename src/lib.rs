@@ -8,7 +8,7 @@
 //! facilitate the creation and composition of such actors.
 use std::marker::PhantomData;
 
-use crate::combinator::{Chunk, Pipe};
+use crate::combinator::{Chunk, Parallel, Pipe};
 
 mod combinator;
 
@@ -56,6 +56,14 @@ where
     {
         Chunk { actor: self, size, __marker: PhantomData }
     }
+
+    /// Run this actor in parallel using `n` workers.
+    fn parallel(self, n: usize) -> Parallel<Self, I, O>
+    where
+        Self: Sized + Clone,
+    {
+        Parallel { actor: self, workers: n, __marker: PhantomData }
+    }
 }
 
 /// A trait for converting an object into an actor.
@@ -74,6 +82,7 @@ where
 }
 
 /// A concrete implementation of an actor based on a function.
+#[derive(Clone)]
 pub struct Func<F> {
     f: F,
 }

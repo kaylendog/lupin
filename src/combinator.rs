@@ -1,9 +1,11 @@
-use std::marker::PhantomData;
+use std::{iter::repeat_n, marker::PhantomData};
 
+use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
 
 use crate::Actor;
 
+#[derive(Clone)]
 pub struct Pipe<A, B, I, IO, O> {
     pub(crate) first: A,
     pub(crate) second: B,
@@ -32,6 +34,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct Chunk<A, I, O> {
     pub(crate) actor: A,
     pub(crate) size: usize,
@@ -66,8 +69,70 @@ where
     }
 }
 
+/// Run `n` instances of the given actor in parallel.
+#[derive(Clone)]
+pub struct Parallel<A, I, O> {
+    pub(crate) actor: A,
+    pub(crate) workers: usize,
+    pub(crate) __marker: PhantomData<(I, O)>,
+}
+
+impl<A, I, O> Actor<I, O> for Parallel<A, I, O>
+where
+    A: Actor<I, O> + Clone,
+    I: Send,
+    O: Send,
+{
+    fn build(
+        self,
+    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+        let mut worker_futs = Vec::with_capacity(self.workers);
+        let mut worker_inputs = Vec::with_capacity(self.workers);
+        let mut worker_outputs = Vec::with_capacity(self.workers);
+
+        for (fut, tx, rx) in repeat_n(self.actor, self.workers).map(|actor| actor.build()) {
+            worker_futs.push(fut);
+            worker_inputs.push(tx);
+            worker_outputs.push(rx);
+        }
+
+        let (in_tx, in_rx) = async_channel::unbounded();
+        let (out_tx, out_rx) = async_channel::unbounded();
+
+        let poll_fut = async {
+            worker_futs.join().await;
+        };
+
+        let input_fut = async move {
+            let mut position = 0;
+            loop {
+                let input = in_rx.recv().await.unwrap();
+                let worker = &worker_inputs[position];
+                worker.send(input).await.unwrap();
+                position = (position + 1) % worker_inputs.len();
+            }
+        };
+
+        let output_fut = async move {
+            loop {
+                for rx in &worker_outputs {
+                    if let Ok(output) = rx.try_recv() {
+                        out_tx.send(output).await.unwrap();
+                    }
+                }
+            }
+        };
+
+        (poll_fut.or(input_fut).or(output_fut), in_tx, out_rx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use rand::{Rng, RngCore};
+
     use crate::{Actor, IntoActor};
 
     async fn identity(x: usize) -> usize {
@@ -84,6 +149,13 @@ mod tests {
 
     async fn sum(items: Vec<usize>) -> usize {
         items.iter().sum()
+    }
+
+    async fn delay(x: usize) -> usize {
+        // generate the rng then drop it immediately to avoid holding it across thread boundaries
+        let millis = { Duration::from_millis(rand::rng().random_range(0..1000)) };
+        tokio::time::sleep(millis).await;
+        x
     }
 
     #[tokio::test]
@@ -110,5 +182,19 @@ mod tests {
         tx.send(2).await.unwrap();
         tx.send(3).await.unwrap();
         assert_eq!(6, rx.recv().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn parallel() {
+        let (task, tx, rx) = delay.into_actor().parallel(3).build();
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        tx.send(2).await.unwrap();
+        tx.send(3).await.unwrap();
+
+        println!("{}", rx.recv().await.unwrap());
+        println!("{}", rx.recv().await.unwrap());
+        println!("{}", rx.recv().await.unwrap());
     }
 }
