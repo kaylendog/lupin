@@ -150,7 +150,7 @@ mod tests {
 
     use rand::Rng;
 
-    use crate::prelude::*;
+    use crate::actor::Actor;
 
     async fn identity(x: usize) -> usize {
         x
@@ -177,7 +177,7 @@ mod tests {
 
     #[tokio::test]
     async fn pipe() {
-        let (task, tx, rx) = add1.into_actor().pipe(mul2.into_actor()).build();
+        let (task, tx, rx) = add1.pipe(mul2).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
         assert_eq!(4, rx.recv().await.unwrap());
@@ -185,7 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn chunk() {
-        let (task, tx, rx) = identity.into_actor().chunk(3).build();
+        let (task, tx, rx) = identity.chunk(3).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
         tx.send(2).await.unwrap();
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(vec![1, 2, 3], rx.recv().await.unwrap());
 
         // with sum
-        let (task, tx, rx) = identity.into_actor().chunk(3).pipe(sum.into_actor()).build();
+        let (task, tx, rx) = identity.chunk(3).pipe(sum).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
         tx.send(2).await.unwrap();
@@ -203,7 +203,7 @@ mod tests {
 
     #[tokio::test]
     async fn parallel() {
-        let (task, tx, rx) = delay.into_actor().parallel(3).build();
+        let (task, tx, rx) = delay.parallel(3).build();
         tokio::spawn(task);
 
         tx.send(1).await.unwrap();

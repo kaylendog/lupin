@@ -57,18 +57,3 @@ where
         Parallel { actor: self, workers: n }
     }
 }
-
-/// A trait for converting an object into an actor.
-///
-/// This trait is useful for adapting functions or other objects into actors.
-pub trait IntoActor<I, O>
-where
-    I: Send,
-    O: Send,
-{
-    /// The type of actor produced by this conversion.
-    type IntoActor: Actor<I, O>;
-
-    /// Converts the object into an actor.
-    fn into_actor(self) -> Self::IntoActor;
-}
