@@ -1,3 +1,5 @@
+//! Concrete actor implementations for functions and closures.
+
 use crate::actor::{Actor, IntoActor};
 
 /// A concrete implementation of an actor based on a function.

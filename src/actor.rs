@@ -1,4 +1,4 @@
-//! An actor.
+//! [`Actor`] definitions and casting.
 
 use std::marker::PhantomData;
 
