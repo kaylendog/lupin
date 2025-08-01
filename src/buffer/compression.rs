@@ -2,7 +2,7 @@
 
 use std::{io::Cursor, marker::PhantomData};
 
-use crate::Actor;
+use crate::actor::Actor;
 
 /// Marker struct for compression.
 pub struct Compress;
@@ -68,4 +68,14 @@ impl Algorithm for Zstd {
     fn decompress(buf: Vec<u8>) -> Vec<u8> {
         zstd::decode_all(Cursor::new(buf)).unwrap()
     }
+}
+
+/// Create a [`Compression`] actor in [`Compress`] mode.
+pub fn compress<T>() -> Compression<T, Compress> {
+    Compression { mode: Compress, __algorithm: PhantomData }
+}
+
+/// Create a [`Compression`] actor in [`Decompress`] mode.
+pub fn decompress<T>() -> Compression<T, Decompress> {
+    Compression { mode: Decompress, __algorithm: PhantomData }
 }

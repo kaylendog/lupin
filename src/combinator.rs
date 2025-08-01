@@ -6,7 +6,7 @@ use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
 use itertools::Itertools;
 
-use crate::Actor;
+use crate::actor::Actor;
 
 #[derive(Clone)]
 pub struct Pipe<A, B, IO> {
@@ -150,7 +150,7 @@ mod tests {
 
     use rand::Rng;
 
-    use crate::{Actor, IntoActor};
+    use crate::prelude::*;
 
     async fn identity(x: usize) -> usize {
         x

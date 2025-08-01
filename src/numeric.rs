@@ -2,7 +2,7 @@
 
 use futures_lite::future::FutureExt;
 
-use crate::Actor;
+use crate::actor::Actor;
 
 pub struct Accumulate<A> {
     actor: A,

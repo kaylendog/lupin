@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use crate::{
-    Actor,
+    actor::Actor,
     buffer::compression::{Compress, Compression, Decompress},
 };
 
