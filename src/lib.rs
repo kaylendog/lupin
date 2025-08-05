@@ -13,6 +13,7 @@ pub mod combinator;
 pub mod functional;
 pub mod numeric;
 
+/// Common types and utilities.
 pub mod prelude {
     pub use crate::actor::*;
     pub use crate::buffer::BufferActor;

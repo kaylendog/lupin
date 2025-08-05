@@ -1,6 +1,6 @@
 //! Combinatorial actors that enable larger systems to be built by connecting actors together.
 
-use std::{iter::repeat_n, marker::PhantomData};
+use std::iter::repeat_n;
 
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
@@ -9,25 +9,27 @@ use itertools::Itertools;
 use crate::actor::Actor;
 
 #[derive(Clone)]
-pub struct Pipe<A, B, IO> {
+pub struct Pipe<A, B> {
     pub(crate) first: A,
     pub(crate) second: B,
-    pub(crate) __marker: PhantomData<IO>,
 }
 
-impl<A, B, I, IO, O> Actor<I, O> for Pipe<A, B, IO>
+impl<A, B> Actor for Pipe<A, B>
 where
-    A: Actor<I, IO>,
-    B: Actor<IO, O>,
-    I: Send,
-    IO: Send,
-    O: Send,
+    A: Actor,
+    B: Actor<Input = A::Output>,
 {
     type State = ();
+    type Input = A::Input;
+    type Output = B::Output;
 
     fn build(
         self,
-    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
         let (first_fut, first_in, first_out) = self.first.build();
         let (second_fut, second_in, second_out) = self.second.build();
         let fut = async move {
@@ -40,8 +42,8 @@ where
 }
 
 /// Pipe the output of one actor into another.
-pub fn pipe<A, B, IO>(first: A, second: B) -> Pipe<A, B, IO> {
-    Pipe { first, second, __marker: PhantomData }
+pub fn pipe<A, B>(first: A, second: B) -> Pipe<A, B> {
+    Pipe { first, second }
 }
 
 /// Collect inputs into variable-size chunks.
@@ -51,17 +53,21 @@ pub struct Chunk<A> {
     pub(crate) size: usize,
 }
 
-impl<A, I, O> Actor<I, Vec<O>> for Chunk<A>
+impl<A> Actor for Chunk<A>
 where
-    A: Actor<I, O>,
-    I: Send,
-    O: Send,
+    A: Actor,
 {
     type State = ();
+    type Input = A::Input;
+    type Output = Vec<A::Output>;
 
     fn build(
         self,
-    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<Vec<O>>) {
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
         let (child_fut, child_tx, child_rx) = self.actor.build();
         let (tx, rx) = async_channel::unbounded();
         let fut = async move {
@@ -93,17 +99,21 @@ pub struct Parallel<A> {
     pub(crate) workers: usize,
 }
 
-impl<A, I, O> Actor<I, O> for Parallel<A>
+impl<A> Actor for Parallel<A>
 where
-    A: Actor<I, O> + Clone,
-    I: Send,
-    O: Send,
+    A: Actor + Clone,
 {
     type State = ();
+    type Input = A::Input;
+    type Output = A::Output;
 
     fn build(
         self,
-    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
         let mut worker_futs = Vec::with_capacity(self.workers);
         let mut worker_inputs = Vec::with_capacity(self.workers);
         let mut worker_outputs = Vec::with_capacity(self.workers);

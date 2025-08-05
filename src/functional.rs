@@ -4,12 +4,13 @@ use std::marker::PhantomData;
 
 use crate::actor::Actor;
 
+/// A concrete wrapper around a [`Functional`].
 pub struct FunctionalActor<Marker, F>
 where
     F: Functional<Marker>,
 {
-    func: F,
-    marker: PhantomData<Marker>,
+    pub(crate) func: F,
+    pub(crate) marker: PhantomData<Marker>,
 }
 
 /// A trait implemented by all functions that are actors.
@@ -30,11 +31,13 @@ mod private {
     pub trait Sealed {}
 }
 
-impl<Marker, F> Actor<F::Input, F::Output> for FunctionalActor<Marker, F>
+impl<Marker, F> Actor for FunctionalActor<Marker, F>
 where
     F: Functional<Marker>,
 {
     type State = F::State;
+    type Input = F::Input;
+    type Output = F::Output;
 
     fn build(
         mut self,
