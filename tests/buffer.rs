@@ -13,6 +13,7 @@ async fn compression() {
     }
 
     for _ in 0..10_000 {
-        rx.recv().await.unwrap();
+        let msg = rx.recv().await.unwrap();
+        assert_eq!(vec![0u8; 32768], msg);
     }
 }

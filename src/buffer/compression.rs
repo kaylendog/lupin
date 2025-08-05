@@ -17,6 +17,7 @@ pub struct Compression<T, M> {
 }
 
 impl<T: Algorithm> Actor<Vec<u8>, Vec<u8>> for Compression<T, Compress> {
+    type State = ();
     fn build(
         self,
     ) -> (impl Future<Output = ()>, async_channel::Sender<Vec<u8>>, async_channel::Receiver<Vec<u8>>)
@@ -33,6 +34,8 @@ impl<T: Algorithm> Actor<Vec<u8>, Vec<u8>> for Compression<T, Compress> {
 }
 
 impl<T: Algorithm> Actor<Vec<u8>, Vec<u8>> for Compression<T, Decompress> {
+    type State = ();
+
     fn build(
         self,
     ) -> (impl Future<Output = ()>, async_channel::Sender<Vec<u8>>, async_channel::Receiver<Vec<u8>>)

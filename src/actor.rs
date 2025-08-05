@@ -14,6 +14,9 @@ where
     I: Send,
     O: Send,
 {
+    /// The actors state.
+    type State;
+
     /// Builds the actor into a task and communication channels.
     ///
     /// # Returns

@@ -15,6 +15,8 @@ macro_rules! accumulate_int_impl {
         where
             A: Actor<$int, $int>,
         {
+            type State = ();
+
             fn build(
                 self,
             ) -> (

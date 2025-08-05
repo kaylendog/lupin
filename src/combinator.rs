@@ -23,6 +23,8 @@ where
     IO: Send,
     O: Send,
 {
+    type State = ();
+
     fn build(
         self,
     ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
@@ -55,6 +57,8 @@ where
     I: Send,
     O: Send,
 {
+    type State = ();
+
     fn build(
         self,
     ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<Vec<O>>) {
@@ -95,6 +99,8 @@ where
     I: Send,
     O: Send,
 {
+    type State = ();
+
     fn build(
         self,
     ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
