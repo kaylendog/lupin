@@ -60,13 +60,13 @@ pub trait Actor {
     /// ```rust,ignore
     /// let pipeline = actor1.pipe(actor2);
     /// ```
-    fn pipe<B, OB>(self, other: B) -> Pipe<Self, B>
+    fn pipe<T, Marker>(self, other: T) -> Pipe<Self, T::IntoActor>
     where
         Self: Sized,
-        B: Actor,
-        OB: Send,
+        T: IntoActor<Marker>,
+        T::IntoActor: Actor<Input = Self::Output>,
     {
-        Pipe { first: self, second: other }
+        Pipe { first: self, second: other.into_actor() }
     }
 
     /// Groups up to `size` results from this actor into chunks.
@@ -109,36 +109,46 @@ pub trait Actor {
 }
 
 /// Conversion trait to turn something into an [`Actor`].
-pub trait IntoActor<S, I, O, Marker> {
+pub trait IntoActor<Marker> {
     /// The type of [`Actor`] that this instance converts into.
-    type IntoActor: Actor<State = S, Input = I, Output = O>;
+    type IntoActor: Actor;
 
     /// Turns this value into its corresponding [`Actor`].
     fn into_actor(self) -> Self::IntoActor;
-}
 
-impl<T> IntoActor<<T as Actor>::State, <T as Actor>::Input, <T as Actor>::Output, ()> for T
-where
-    T: Actor,
-{
-    type IntoActor = T;
+    /// See [`Actor::pipe`].
+    fn pipe<T, TM>(self, other: T) -> Pipe<Self::IntoActor, T::IntoActor>
+    where
+        Self: Sized,
+        T: IntoActor<TM>,
+        T::IntoActor: Actor<Input = <Self::IntoActor as Actor>::Output>,
+    {
+        Pipe { first: self.into_actor(), second: other.into_actor() }
+    }
 
-    fn into_actor(self) -> Self::IntoActor {
-        self
+    /// See [`Actor::chunk`].
+    fn chunk(self, size: usize) -> Chunk<Self::IntoActor>
+    where
+        Self: Sized,
+    {
+        Chunk { actor: self.into_actor(), size }
+    }
+
+    /// See [`Actor::parallel`]
+    fn parallel(self, n: usize) -> Parallel<Self::IntoActor>
+    where
+        Self: Sized + Clone,
+    {
+        Parallel { actor: self.into_actor(), workers: n }
     }
 }
 
 /// A marker type used to distinguish hand-implemented systems from functional systems.
 #[doc(hidden)]
+#[derive(Clone)]
 pub struct IsFunctionalActor;
 
-impl<Marker, F>
-    IntoActor<
-        <F as Functional<Marker>>::State,
-        <F as Functional<Marker>>::Input,
-        <F as Functional<Marker>>::Output,
-        (IsFunctionalActor, Marker),
-    > for F
+impl<Marker, F> IntoActor<(IsFunctionalActor, Marker)> for F
 where
     Marker: 'static,
     F: Functional<Marker>,

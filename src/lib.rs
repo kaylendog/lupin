@@ -8,7 +8,6 @@
 //! facilitate the creation and composition of such actors.
 
 pub mod actor;
-pub mod buffer;
 pub mod combinator;
 pub mod functional;
 pub mod numeric;
@@ -16,6 +15,5 @@ pub mod numeric;
 /// Common types and utilities.
 pub mod prelude {
     pub use crate::actor::*;
-    pub use crate::buffer::BufferActor;
     pub use crate::combinator::{chunk, pipe};
 }

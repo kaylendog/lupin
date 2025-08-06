@@ -5,6 +5,7 @@ use std::marker::PhantomData;
 use crate::actor::Actor;
 
 /// A concrete wrapper around a [`Functional`].
+#[derive(Clone)]
 pub struct FunctionalActor<Marker, F>
 where
     F: Functional<Marker>,
@@ -14,7 +15,7 @@ where
 }
 
 /// A trait implemented by all functions that are actors.
-pub trait Functional<Marker>: private::Sealed {
+pub trait Functional<Marker>: private::Sealed<Marker> {
     /// The state of this actor.
     type State: Send + Default;
     /// The input type of this actor.
@@ -28,7 +29,26 @@ pub trait Functional<Marker>: private::Sealed {
 
 /// Internal sealed.
 mod private {
-    pub trait Sealed {}
+    pub trait Sealed<Marker> {}
+
+    impl<F, Fut, I, O> Sealed<fn(I) -> Fut> for F
+    where
+        for<'a> &'a mut F: FnMut(I) -> Fut,
+        Fut: Future<Output = O>,
+        I: Send,
+        O: Send,
+    {
+    }
+
+    impl<F, Fut, S, I, O> Sealed<fn(&mut S, I) -> Fut> for F
+    where
+        for<'a> &'a mut F: FnMut(I) -> Fut,
+        Fut: Future<Output = O>,
+        S: Send,
+        I: Send,
+        O: Send,
+    {
+    }
 }
 
 impl<Marker, F> Actor for FunctionalActor<Marker, F>
@@ -62,7 +82,7 @@ where
 
 impl<F, Fut, I, O> Functional<fn(I) -> Fut> for F
 where
-    F: Send + private::Sealed,
+    F: Send + private::Sealed<fn(I) -> Fut>,
     for<'a> &'a mut F: FnMut(I) -> Fut,
     Fut: Future<Output = O>,
     I: Send,
@@ -86,7 +106,7 @@ where
 
 impl<F, Fut, S, I, O> Functional<fn(&mut S, I) -> Fut> for F
 where
-    F: Send + private::Sealed,
+    F: Send + private::Sealed<fn(&mut S, I) -> Fut>,
     for<'a> &'a mut F: FnMut(&mut S, I) -> Fut,
     Fut: Future<Output = O>,
     S: Send + Default,
@@ -115,12 +135,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    };
 
-    async fn enumerate<T: Send>(idx: &mut usize, t: T) -> (usize, T) {
+    use crate::functional::Functional;
+
+    async fn enumerate(idx: &mut usize, t: usize) -> (usize, usize) {
         let curr = *idx;
         *idx += 1;
         (curr, t)
@@ -128,22 +146,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stateful_actor() {
-        let acc = Arc::new(AtomicU64::new(0));
-        let count = move |_: ()| {
-            let acc = acc.clone();
-            async move { acc.fetch_add(1, Ordering::SeqCst) + 1 }
-        };
-
-        async fn identity(x: usize) -> usize {
-            x
-        }
-
-        async fn acc_identity(acc: &mut usize, x: usize) -> usize {
-            *acc += x;
-            x
-        }
-
-        let (task, tx, rx) = count.build();
+        let (task, tx, rx) = Functional::call(&mut enumerate, &mut 0, 0);
         tokio::spawn(task);
 
         tx.send(()).await.unwrap();

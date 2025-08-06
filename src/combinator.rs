@@ -6,10 +6,14 @@ use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
 use itertools::Itertools;
 
-use crate::actor::Actor;
+use crate::actor::{Actor, IntoActor};
 
 #[derive(Clone)]
-pub struct Pipe<A, B> {
+pub struct Pipe<A, B>
+where
+    A: Actor,
+    B: Actor<Input = A::Output>,
+{
     pub(crate) first: A,
     pub(crate) second: B,
 }
@@ -42,8 +46,14 @@ where
 }
 
 /// Pipe the output of one actor into another.
-pub fn pipe<A, B>(first: A, second: B) -> Pipe<A, B> {
-    Pipe { first, second }
+pub fn pipe<A, B, MA, MB>(first: A, second: B) -> Pipe<A::IntoActor, B::IntoActor>
+where
+    A: IntoActor<MA>,
+    B: IntoActor<MB>,
+    A::IntoActor: Actor,
+    B::IntoActor: Actor<Input = <A::IntoActor as Actor>::Output>,
+{
+    Pipe { first: first.into_actor(), second: second.into_actor() }
 }
 
 /// Collect inputs into variable-size chunks.
@@ -166,7 +176,7 @@ mod tests {
 
     use rand::Rng;
 
-    use crate::actor::Actor;
+    use crate::actor::{Actor, IntoActor};
 
     async fn identity(x: usize) -> usize {
         x
