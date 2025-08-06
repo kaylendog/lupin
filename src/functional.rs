@@ -2,7 +2,7 @@
 
 use std::marker::PhantomData;
 
-use crate::actor::Actor;
+use crate::actor::{Actor, State};
 
 /// A concrete wrapper around a [`Functional`].
 #[derive(Clone)]
@@ -17,32 +17,34 @@ where
 /// A trait implemented by all functions that are actors.
 pub trait Functional<Marker>: private::Sealed<Marker> {
     /// The state of this actor.
-    type State: Send + Default;
+    type State: Send + Sync + Default;
     /// The input type of this actor.
     type Input: Send;
     /// The output type of this actor.
     type Output: Send;
 
     /// Execute this actor.
-    async fn call(&mut self, state: &mut Self::State, input: Self::Input) -> Self::Output;
+    async fn call(&self, state: State<Self::State>, input: Self::Input) -> Self::Output;
 }
 
 /// Internal sealed.
 mod private {
+    use crate::actor::State;
+
     pub trait Sealed<Marker> {}
 
     impl<F, Fut, I, O> Sealed<fn(I) -> Fut> for F
     where
-        for<'a> &'a mut F: FnMut(I) -> Fut,
+        F: Fn(I) -> Fut,
         Fut: Future<Output = O>,
         I: Send,
         O: Send,
     {
     }
 
-    impl<F, Fut, S, I, O> Sealed<fn(&mut S, I) -> Fut> for F
+    impl<F, Fut, S, I, O> Sealed<fn(State<S>, I) -> Fut> for F
     where
-        for<'a> &'a mut F: FnMut(I) -> Fut,
+        F: Fn(State<S>, I) -> Fut,
         Fut: Future<Output = O>,
         S: Send,
         I: Send,
@@ -60,7 +62,7 @@ where
     type Output = F::Output;
 
     fn build(
-        mut self,
+        self,
     ) -> (
         impl Future<Output = ()>,
         async_channel::Sender<F::Input>,
@@ -71,8 +73,9 @@ where
         let fut = async move {
             let mut state = F::State::default();
             loop {
+                let state = State(&mut state);
                 let input = in_rx.recv().await.unwrap();
-                let output = self.func.call(&mut state, input).await;
+                let output = self.func.call(state, input).await;
                 out_tx.send(output).await.unwrap();
             }
         };
@@ -82,8 +85,7 @@ where
 
 impl<F, Fut, I, O> Functional<fn(I) -> Fut> for F
 where
-    F: Send + private::Sealed<fn(I) -> Fut>,
-    for<'a> &'a mut F: FnMut(I) -> Fut,
+    F: Fn(I) -> Fut + Send + private::Sealed<fn(I) -> Fut>,
     Fut: Future<Output = O>,
     I: Send,
     O: Send,
@@ -92,24 +94,16 @@ where
     type Input = I;
     type Output = O;
 
-    async fn call(&mut self, _: &mut Self::State, input: Self::Input) -> Self::Output {
-        // Rustc fails to recognise that `self` is a fucntion, so we use this inner method.
-        async fn call_inner<Fut, I, O>(mut f: impl FnMut(I) -> Fut, input: I) -> O
-        where
-            Fut: Future<Output = O>,
-        {
-            f(input).await
-        }
-        call_inner(self, input).await
+    async fn call<'a>(&self, _: State<'a, Self::State>, input: Self::Input) -> Self::Output {
+        (self)(input).await
     }
 }
 
-impl<F, Fut, S, I, O> Functional<fn(&mut S, I) -> Fut> for F
+impl<F, Fut, S, I, O> Functional<fn(State<S>, I) -> Fut> for F
 where
-    F: Send + private::Sealed<fn(&mut S, I) -> Fut>,
-    for<'a> &'a mut F: FnMut(&mut S, I) -> Fut,
+    F: Fn(State<S>, I) -> Fut + Send + private::Sealed<fn(State<S>, I) -> Fut>,
     Fut: Future<Output = O>,
-    S: Send + Default,
+    S: Send + Sync + Default,
     I: Send,
     O: Send,
 {
@@ -117,28 +111,17 @@ where
     type Input = I;
     type Output = O;
 
-    async fn call(&mut self, state: &mut Self::State, input: Self::Input) -> Self::Output {
-        // Rustc fails to recognise that `self` is a fucntion, so we use this inner method.
-        async fn call_inner<Fut, S, I, O>(
-            mut f: impl FnMut(&mut S, I) -> Fut,
-            state: &mut S,
-            input: I,
-        ) -> O
-        where
-            Fut: Future<Output = O>,
-        {
-            f(state, input).await
-        }
-        call_inner(self, state, input).await
+    async fn call<'a>(&self, state: State<'a, Self::State>, input: Self::Input) -> Self::Output {
+        (self)(state, input).await
     }
 }
 
 #[cfg(test)]
 mod tests {
-
+    use crate::actor::State;
     use crate::functional::Functional;
 
-    async fn enumerate(idx: &mut usize, t: usize) -> (usize, usize) {
+    async fn enumerate<'a>(mut idx: State<'a, usize>, t: usize) -> (usize, usize) {
         let curr = *idx;
         *idx += 1;
         (curr, t)
@@ -146,15 +129,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_stateful_actor() {
-        let (task, tx, rx) = Functional::call(&mut enumerate, &mut 0, 0);
-        tokio::spawn(task);
-
-        tx.send(()).await.unwrap();
-        tx.send(()).await.unwrap();
-        tx.send(()).await.unwrap();
-
-        assert_eq!(1, rx.recv().await.unwrap());
-        assert_eq!(2, rx.recv().await.unwrap());
-        assert_eq!(3, rx.recv().await.unwrap());
+        Functional::call(&enumerate, State(&mut 0), 0)
     }
 }

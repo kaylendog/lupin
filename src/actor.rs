@@ -1,6 +1,9 @@
 //! [`Actor`] definitions and casting.
 
-use std::marker::PhantomData;
+use std::{
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{
     combinator::{Chunk, Parallel, Pipe},
@@ -156,5 +159,23 @@ where
     type IntoActor = FunctionalActor<Marker, F>;
     fn into_actor(self) -> Self::IntoActor {
         FunctionalActor { func: self, marker: PhantomData }
+    }
+}
+
+/// A wrapper type that denotes mutable state.
+#[derive(Debug)]
+pub struct State<'a, T: ?Sized>(pub(crate) &'a mut T);
+
+impl<'i, T: ?Sized> Deref for State<'i, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'i, T: ?Sized> DerefMut for State<'i, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
     }
 }

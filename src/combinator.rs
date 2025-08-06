@@ -203,6 +203,8 @@ mod tests {
 
     #[tokio::test]
     async fn pipe() {
+        add1.into_actor();
+
         let (task, tx, rx) = add1.pipe(mul2).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
