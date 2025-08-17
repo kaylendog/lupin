@@ -64,8 +64,8 @@ jobs:
 
       - name: Check Formatting
         run: |
-          cargo +nightly fmt --check
+          cargo +nightly-2025-08-08 fmt --check
 
       - name: Clippy
         run: |
-          cargo +nightly clippy -- -D warnings
+          cargo +nightly-2025-08-08 clippy -- -D warnings
