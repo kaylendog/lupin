@@ -229,9 +229,10 @@ pub fn filter<A, P>(actor: A, predicate: P) -> Filter<A, P> {
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "std")]
-    use rand::Rng;
-    #[cfg(feature = "std")]
     use std::time::Duration;
+
+    #[cfg(feature = "std")]
+    use rand::Rng;
 
     use crate::actor::{Actor, IntoActor};
 
