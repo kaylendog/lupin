@@ -1,13 +1,22 @@
-//! Combinatorial actors that enable larger systems to be built by connecting actors together.
+//! Combinatorial actors that enable larger systems to be built by connecting
+//! actors together.
 
-use std::iter::repeat_n;
+#[cfg(feature = "std")]
+use core::iter::repeat_n;
 
+#[cfg(feature = "std")]
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
+#[cfg(feature = "std")]
 use itertools::Itertools;
 
 use crate::actor::{Actor, IntoActor};
 
+/// Pipes the output of one actor into another.
+///
+/// This combinator allows you to connect two actors such that the output of the
+/// first is sent as input to the second. The `Pipe` struct holds both actors
+/// internally.
 #[derive(Clone)]
 pub struct Pipe<A, B>
 where
@@ -57,12 +66,14 @@ where
 }
 
 /// Collect inputs into variable-size chunks.
+#[cfg(feature = "std")]
 #[derive(Clone)]
 pub struct Chunk<A> {
     pub(crate) actor: A,
     pub(crate) size: usize,
 }
 
+#[cfg(feature = "std")]
 impl<A> Actor for Chunk<A>
 where
     A: Actor,
@@ -98,17 +109,20 @@ where
 }
 
 /// Pipe the output of one actor into another.
+#[cfg(feature = "std")]
 pub fn chunk<A>(actor: A, size: usize) -> Chunk<A> {
     Chunk { actor, size }
 }
 
 /// Run `n` instances of the given actor in parallel.
+#[cfg(feature = "std")]
 #[derive(Clone)]
 pub struct Parallel<A> {
     pub(crate) actor: A,
     pub(crate) workers: usize,
 }
 
+#[cfg(feature = "std")]
 impl<A> Actor for Parallel<A>
 where
     A: Actor + Clone,
@@ -237,7 +251,8 @@ mod tests {
     }
 
     async fn delay(x: usize) -> usize {
-        // generate the rng then drop it immediately to avoid holding it across thread boundaries
+        // generate the rng then drop it immediately to avoid holding it across thread
+        // boundaries
         let millis = { Duration::from_millis(rand::rng().random_range(0..1000)) };
         tokio::time::sleep(millis).await;
         x

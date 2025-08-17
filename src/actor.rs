@@ -1,8 +1,10 @@
 //! [`Actor`] definitions and casting.
 
-use std::ops::{Deref, DerefMut};
+use core::ops::{Deref, DerefMut};
 
-use crate::combinator::{Chunk, Filter, Parallel, Pipe};
+#[cfg(feature = "std")]
+use crate::combinator::{Chunk, Parallel};
+use crate::combinator::{Filter, Pipe};
 
 /// A trait representing an asynchronous actor.
 ///
@@ -16,7 +18,8 @@ use crate::combinator::{Chunk, Filter, Parallel, Pipe};
 pub trait Actor {
     /// The actor's internal state.
     ///
-    /// This type can be used to store any state required by the actor during its execution.
+    /// This type can be used to store any state required by the actor during
+    /// its execution.
     type State;
 
     /// The actors input type.
@@ -29,9 +32,12 @@ pub trait Actor {
     ///
     /// # Returns
     /// A tuple containing:
-    /// - A future representing the actor's main task (drives the actor's logic).
-    /// - An [`async_channel::Sender<I>`] for sending input messages to the actor.
-    /// - An [`async_channel::Receiver<O>`] for receiving output messages from the actor.
+    /// - A future representing the actor's main task (drives the actor's
+    ///   logic).
+    /// - An [`async_channel::Sender<I>`] for sending input messages to the
+    ///   actor.
+    /// - An [`async_channel::Receiver<O>`] for receiving output messages from
+    ///   the actor.
     ///
     /// # Example
     /// ```rust,ignore
@@ -48,7 +54,8 @@ pub trait Actor {
     /// Composes this actor with another actor to form a pipeline.
     ///
     /// # Arguments
-    /// - `other`: The next actor in the pipeline, which receives this actor's output as input.
+    /// - `other`: The next actor in the pipeline, which receives this actor's
+    ///   output as input.
     ///
     /// # Returns
     /// A [`Pipe`] representing the composed pipeline of two actors.
@@ -78,6 +85,7 @@ pub trait Actor {
     /// ```rust,ignore
     /// let chunked = actor.chunk(10);
     /// ```
+    #[cfg(feature = "std")]
     fn chunk(self, size: usize) -> Chunk<Self>
     where
         Self: Sized,
@@ -97,6 +105,7 @@ pub trait Actor {
     /// ```rust,ignore
     /// let parallel = actor.parallel(4);
     /// ```
+    #[cfg(feature = "std")]
     fn parallel(self, n: usize) -> Parallel<Self>
     where
         Self: Sized + Clone,
@@ -107,10 +116,13 @@ pub trait Actor {
     /// Filters output messages from this actor using a predicate.
     ///
     /// # Arguments
-    /// - `predicate`: A function or closure that takes a reference to an output message and returns `true` to keep the message, or `false` to discard it.
+    /// - `predicate`: A function or closure that takes a reference to an output
+    ///   message and returns `true` to keep the message, or `false` to discard
+    ///   it.
     ///
     /// # Returns
-    /// A [`crate::combinator::Filter`] combinator that only passes through output messages matching the predicate.
+    /// A [`crate::combinator::Filter`] combinator that only passes through
+    /// output messages matching the predicate.
     ///
     /// # Example
     /// ```rust,ignore
@@ -144,6 +156,7 @@ pub trait IntoActor<Marker> {
     }
 
     /// See [`Actor::chunk`].
+    #[cfg(feature = "std")]
     fn chunk(self, size: usize) -> Chunk<Self::IntoActor>
     where
         Self: Sized,
@@ -151,7 +164,8 @@ pub trait IntoActor<Marker> {
         Chunk { actor: self.into_actor(), size }
     }
 
-    /// See [`Actor::parallel`]
+    /// See [`Actor::parallel`].
+    #[cfg(feature = "std")]
     fn parallel(self, n: usize) -> Parallel<Self::IntoActor>
     where
         Self: Sized + Clone,

@@ -1,6 +1,6 @@
 //! Concrete actor implementations for functions and closures.
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use crate::actor::{Actor, IntoActor, State};
 
