@@ -2,7 +2,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use crate::combinator::{Chunk, Parallel, Pipe};
+use crate::combinator::{Chunk, Filter, Parallel, Pipe};
 
 /// A trait representing an asynchronous actor.
 ///
@@ -103,6 +103,26 @@ pub trait Actor {
     {
         Parallel { actor: self, workers: n }
     }
+
+    /// Filters output messages from this actor using a predicate.
+    ///
+    /// # Arguments
+    /// - `predicate`: A function or closure that takes a reference to an output message and returns `true` to keep the message, or `false` to discard it.
+    ///
+    /// # Returns
+    /// A [`crate::combinator::Filter`] combinator that only passes through output messages matching the predicate.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let filtered = actor.filter(|msg| msg.is_valid());
+    /// ```
+    fn filter<F>(self, predicate: F) -> crate::combinator::Filter<Self, F>
+    where
+        Self: Sized,
+        F: Fn(&Self::Output) -> bool + Send + Sync + 'static,
+    {
+        Filter { actor: self, predicate }
+    }
 }
 
 /// Conversion trait to turn something into an [`Actor`].
@@ -137,6 +157,15 @@ pub trait IntoActor<Marker> {
         Self: Sized + Clone,
     {
         Parallel { actor: self.into_actor(), workers: n }
+    }
+
+    /// See [`Actor::filter`].
+    fn filter<F>(self, predicate: F) -> Filter<Self::IntoActor, F>
+    where
+        Self: Sized,
+        F: Fn(&<Self::IntoActor as Actor>::Output) -> bool + Send + Sync + 'static,
+    {
+        Filter { actor: self.into_actor(), predicate }
     }
 }
 

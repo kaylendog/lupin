@@ -170,6 +170,48 @@ where
     }
 }
 
+/// Filter inputs using a predicate.
+#[derive(Clone)]
+pub struct Filter<A, P> {
+    pub(crate) actor: A,
+    pub(crate) predicate: P,
+}
+impl<A, P> Actor for Filter<A, P>
+where
+    A: Actor,
+    P: Fn(&A::Output) -> bool + Send + Sync + 'static,
+{
+    type State = ();
+    type Input = A::Input;
+    type Output = A::Output;
+
+    fn build(
+        self,
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
+        let (child_fut, child_tx, child_rx) = self.actor.build();
+        let (tx, rx) = async_channel::unbounded();
+        let predicate = self.predicate;
+        let fut = async move {
+            loop {
+                let item = child_rx.recv().await.unwrap();
+                if predicate(&item) {
+                    tx.send(item).await.unwrap();
+                }
+            }
+        };
+        (child_fut.or(fut), child_tx, rx)
+    }
+}
+
+/// Pipe the output of one actor through a predicate actor.
+pub fn filter<A, P>(actor: A, predicate: P) -> Filter<A, P> {
+    Filter { actor, predicate }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -241,5 +283,22 @@ mod tests {
         println!("{}", rx.recv().await.unwrap());
         println!("{}", rx.recv().await.unwrap());
         println!("{}", rx.recv().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn filter() {
+        // Predicate: only allow even numbers
+        let is_even = |x: &usize| *x % 2 == 0;
+        let (task, tx, rx) = identity.filter(is_even).build();
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        tx.send(2).await.unwrap();
+        tx.send(3).await.unwrap();
+        tx.send(4).await.unwrap();
+
+        // Only 2 and 4 should pass through
+        assert_eq!(2, rx.recv().await.unwrap());
+        assert_eq!(4, rx.recv().await.unwrap());
     }
 }

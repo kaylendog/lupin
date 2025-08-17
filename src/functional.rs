@@ -93,21 +93,6 @@ where
     }
 }
 
-pub trait Functional<Marker> {
-    fn is_functional(&self) -> bool {
-        true
-    }
-}
-
-impl<F, Fut, S, I, O> Functional<fn(&mut S, I) -> Fut> for F
-where
-    F: AsyncFn(State<'_, S>, I) -> O,
-    S: Send + Sync + Default,
-    I: Send + 'static,
-    O: Send + 'static,
-{
-}
-
 #[cfg(test)]
 mod tests {
     use crate::actor::{Actor, IntoActor, State};
