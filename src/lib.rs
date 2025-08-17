@@ -1,6 +1,6 @@
 //! A stupendously simple actor framework for the functionally inclined.
 //!
-//! Fenrir is a lightweight actor framework that provides abstractions for
+//! Lupin is a lightweight actor framework that provides abstractions for
 //! building and composing asynchronous systems.
 //!
 //! An actor is a component that processes input messages and produces output

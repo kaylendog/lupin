@@ -139,18 +139,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
-name = "fenrir"
-version = "0.1.0"
-dependencies = [
- "async-channel",
- "futures-concurrency",
- "futures-lite",
- "itertools",
- "rand",
- "tokio",
-]
-
-[[package]]
 name = "fixedbitset"
 version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -290,6 +278,18 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "lupin"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "futures-concurrency",
+ "futures-lite",
+ "itertools",
+ "rand",
+ "tokio",
 ]
 
 [[package]]

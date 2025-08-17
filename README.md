@@ -1,10 +1,10 @@
-# fenrir
+# lupin
 
 A stupendously simple actor framework for the functionally inclined.
 
 ## Overview
 
-The core of Fenrir's abstraction is built on two key concepts:
+The core of Lupin's abstraction is built on two key concepts:
 
 - Actors
 - Services
