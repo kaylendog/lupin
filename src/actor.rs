@@ -1,14 +1,8 @@
 //! [`Actor`] definitions and casting.
 
-use std::{
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut};
 
-use crate::{
-    combinator::{Chunk, Parallel, Pipe},
-    functional::{Functional, FunctionalActor},
-};
+use crate::combinator::{Chunk, Parallel, Pipe};
 
 /// A trait representing an asynchronous actor.
 ///
@@ -143,22 +137,6 @@ pub trait IntoActor<Marker> {
         Self: Sized + Clone,
     {
         Parallel { actor: self.into_actor(), workers: n }
-    }
-}
-
-/// A marker type used to distinguish hand-implemented systems from functional systems.
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct IsFunctionalActor;
-
-impl<Marker, F> IntoActor<(IsFunctionalActor, Marker)> for F
-where
-    Marker: 'static,
-    F: Functional<Marker>,
-{
-    type IntoActor = FunctionalActor<Marker, F>;
-    fn into_actor(self) -> Self::IntoActor {
-        FunctionalActor { func: self, marker: PhantomData }
     }
 }
 
