@@ -184,6 +184,46 @@ where
     }
 }
 
+impl<A, F, B> Actor for Map<A, F>
+where
+    A: Actor,
+    F: Fn(A::Output) -> B + Send + Sync + 'static,
+    B: Send + 'static,
+{
+    type State = ();
+    type Input = A::Input;
+    type Output = B;
+
+    fn build(
+        self,
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
+        let (child_fut, child_tx, child_rx) = self.actor.build();
+        let (tx, rx) = async_channel::unbounded();
+        let mapper = self.func;
+        let fut = async move {
+            loop {
+                let item = child_rx.recv().await.unwrap();
+                tx.send(mapper(item)).await.unwrap();
+            }
+        };
+        (child_fut.or(fut), child_tx, rx)
+    }
+}
+
+/// Apply a mapping function to the output of an actor.
+pub fn map<A, F, B>(actor: A, mapper: F) -> Map<A, F>
+where
+    A: Actor,
+    F: Fn(A::Output) -> B + Send + Sync + 'static,
+    B: Send + 'static,
+{
+    Map { actor, func: mapper }
+}
+
 /// Filter inputs using a predicate.
 #[derive(Clone)]
 pub struct Filter<A, P> {
@@ -224,6 +264,62 @@ where
 /// Pipe the output of one actor through a predicate actor.
 pub fn filter<A, P>(actor: A, predicate: P) -> Filter<A, P> {
     Filter { actor, predicate }
+}
+
+/// Transform the output of an actor using a mapping function.
+#[derive(Clone)]
+pub struct Map<A, F> {
+    pub(crate) actor: A,
+    pub(crate) func: F,
+}
+
+/// Transform the output of an actor using a filter and mapping function.
+#[derive(Clone)]
+pub struct FilterMap<A, F> {
+    pub(crate) actor: A,
+    pub(crate) func: F,
+}
+
+impl<A, F, B> Actor for FilterMap<A, F>
+where
+    A: Actor,
+    F: Fn(A::Output) -> Option<B> + Send + Sync + 'static,
+    B: Send + 'static,
+{
+    type State = ();
+    type Input = A::Input;
+    type Output = B;
+
+    fn build(
+        self,
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
+        let (child_fut, child_tx, child_rx) = self.actor.build();
+        let (tx, rx) = async_channel::unbounded();
+        let filter_mapper = self.func;
+        let fut = async move {
+            loop {
+                let item = child_rx.recv().await.unwrap();
+                if let Some(mapped) = filter_mapper(item) {
+                    tx.send(mapped).await.unwrap();
+                }
+            }
+        };
+        (child_fut.or(fut), child_tx, rx)
+    }
+}
+
+/// Apply a filter and mapping function to the output of an actor.
+pub fn filter_map<A, F, B>(actor: A, filter_mapper: F) -> FilterMap<A, F>
+where
+    A: Actor,
+    F: Fn(A::Output) -> Option<B> + Send + Sync + 'static,
+    B: Send + 'static,
+{
+    FilterMap { actor, func: filter_mapper }
 }
 
 #[cfg(test)]
@@ -321,5 +417,38 @@ mod tests {
         // Only 2 and 4 should pass through
         assert_eq!(2, rx.recv().await.unwrap());
         assert_eq!(4, rx.recv().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn map() {
+        // Mapping function: multiply by 10
+        let multiply_by_10 = |x: usize| x * 10;
+        let (task, tx, rx) = identity.map(multiply_by_10).build();
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        tx.send(2).await.unwrap();
+        tx.send(3).await.unwrap();
+
+        assert_eq!(10, rx.recv().await.unwrap());
+        assert_eq!(20, rx.recv().await.unwrap());
+        assert_eq!(30, rx.recv().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn filter_map() {
+        // Filter and map function: only allow even numbers and divide them by 2
+        let even_and_half = |x: usize| if x % 2 == 0 { Some(x / 2) } else { None };
+        let (task, tx, rx) = identity.filter_map(even_and_half).build();
+        tokio::spawn(task);
+
+        tx.send(1).await.unwrap();
+        tx.send(2).await.unwrap();
+        tx.send(3).await.unwrap();
+        tx.send(4).await.unwrap();
+
+        // Only 2 and 4 should pass through, mapped to 1 and 2 respectively
+        assert_eq!(1, rx.recv().await.unwrap());
+        assert_eq!(2, rx.recv().await.unwrap());
     }
 }

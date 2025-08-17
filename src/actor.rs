@@ -4,7 +4,7 @@ use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "std")]
 use crate::combinator::{Chunk, Parallel};
-use crate::combinator::{Filter, Pipe};
+use crate::combinator::{Filter, FilterMap, Map, Pipe};
 
 /// A trait representing an asynchronous actor.
 ///
@@ -180,6 +180,24 @@ pub trait IntoActor<Marker> {
         F: Fn(&<Self::IntoActor as Actor>::Output) -> bool + Send + Sync + 'static,
     {
         Filter { actor: self.into_actor(), predicate }
+    }
+
+    /// See [`Actor::map`].
+    fn map<F, U>(self, func: F) -> Map<Self::IntoActor, F>
+    where
+        Self: Sized,
+        F: Fn(<Self::IntoActor as Actor>::Output) -> U + Send + Sync + 'static,
+    {
+        Map { actor: self.into_actor(), func }
+    }
+
+    /// See [`Actor::filter_map`].
+    fn filter_map<F, U>(self, func: F) -> FilterMap<Self::IntoActor, F>
+    where
+        Self: Sized,
+        F: Fn(<Self::IntoActor as Actor>::Output) -> Option<U> + Send + Sync + 'static,
+    {
+        FilterMap { actor: self.into_actor(), func }
     }
 }
 
