@@ -4,7 +4,7 @@ A stupendously simple actor framework for the functionally inclined.
 
 ## Overview
 
-Lupin is built around the concept of **Actors**: asynchronous function that processes input messages and produces output messages. Actors can be composed into pipelines, enabling the creation of complex workflows.
+Lupin is a light-weight actor framework for building composable and modular asynchronous systems. It is built around the concept of **Actors**: asynchronous function that processes input messages and produces output messages. Actors can be composed into pipelines, enabling the creation of complex workflows.
 
 For example, the simplest actor possible, the identity actor, can be defined as an asynchronous function that returns its input:
 
