@@ -1,0 +1,71 @@
+name: Rust CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: "🐧 flags: ${{ matrix.features }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        features:
+          - ""
+          - "--no-default-features"
+          - "--no-default-features --features std"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Load cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # use a separate cache for each job to work around
+          # https://github.com/Swatinem/rust-cache/issues/124
+          key: "${{ matrix.features }}"
+          # ... but only save the cache on the main branch
+          # cf https://github.com/Swatinem/rust-cache/issues/95
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Test
+        run: |
+          cargo nextest run ${{ matrix.features }}
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2025-08-08
+          components: clippy, rustfmt
+
+      - name: Load cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Check Formatting
+        run: |
+          cargo +nightly fmt --check
+
+      - name: Clippy
+        run: |
+          cargo +nightly clippy -- -D warnings
