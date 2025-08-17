@@ -84,7 +84,7 @@ assert_eq!(chunk, vec![1, 2, 3]);
 
 ## Contributing
 
-Contributions to Lupin are welcome and encouraged! Please read [CONTRIBUTING.md] for more information.
+Contributions to Lupin are welcome and encouraged! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for more information.
 
 ## License
 
