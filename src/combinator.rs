@@ -228,9 +228,10 @@ pub fn filter<A, P>(actor: A, predicate: P) -> Filter<A, P> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
+    #[cfg(feature = "std")]
     use rand::Rng;
+    #[cfg(feature = "std")]
+    use std::time::Duration;
 
     use crate::actor::{Actor, IntoActor};
 
@@ -246,10 +247,12 @@ mod tests {
         x * 2
     }
 
+    #[cfg(feature = "std")]
     async fn sum(items: Vec<usize>) -> usize {
         items.iter().sum()
     }
 
+    #[cfg(feature = "std")]
     async fn delay(x: usize) -> usize {
         // generate the rng then drop it immediately to avoid holding it across thread
         // boundaries
@@ -268,6 +271,7 @@ mod tests {
         assert_eq!(4, rx.recv().await.unwrap());
     }
 
+    #[cfg(feature = "std")]
     #[tokio::test]
     async fn chunk() {
         let (task, tx, rx) = identity.chunk(3).build();
@@ -286,6 +290,7 @@ mod tests {
         assert_eq!(6, rx.recv().await.unwrap());
     }
 
+    #[cfg(feature = "std")]
     #[tokio::test]
     async fn parallel() {
         let (task, tx, rx) = delay.parallel(3).build();
