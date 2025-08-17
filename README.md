@@ -39,6 +39,22 @@ Lupin provides a rich set of combinators to compose and transform actors:
 - **`map`**: Transforms outputs using a mapping function.
 - **`filter_map`**: Combines filtering and mapping in a single step.
 
+For example, one can compose two actors together using `pipe` to perform two sequential operations on an input:
+
+```rs
+async fn mul3(input: usize) -> usize {
+    input * 3
+}
+
+async fn add1(input: usize) -> usize {
+    input + 1
+}
+
+fn combined() -> impl Actor {
+    mul3.pipe(add1)
+}
+```
+
 ## Mutable Actors
 
 In addition to immutable actors, Lupin supports **mutable actors** for scenarios where state needs to be maintained across messages. Mutable actors are defined as asynchronous functions that operate on a mutable state and process input messages.
@@ -51,6 +67,7 @@ async fn counter(state: State<'_, usize>, input: usize) -> usize {
     *state
 }
 ```
+
 
 Mutable actors are particularly useful for tasks like aggregation, caching, or any operation that requires stateful computation.
 
