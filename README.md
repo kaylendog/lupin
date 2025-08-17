@@ -1,6 +1,6 @@
 # Lupin
 
-A lightweight and composable actor framework designed for the functionally inclined.
+A stupendously simple actor framework for the functionally inclined.
 
 ## Overview
 
