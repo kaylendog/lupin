@@ -24,9 +24,7 @@
 
 pub mod actor;
 pub mod combinator;
-pub mod functional;
 pub mod numeric;
-pub mod stream;
 
 /// Common types and utilities.
 pub mod prelude {
