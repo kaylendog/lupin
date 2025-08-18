@@ -2,10 +2,10 @@
 //! actors together.
 
 #[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
 use core::iter::repeat_n;
 
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
@@ -336,10 +336,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use core::time::Duration;
-
     #[cfg(feature = "alloc")]
     use alloc::vec::Vec;
+    use core::time::Duration;
 
     use crate::actor::{Actor, IntoActor};
 
