@@ -30,5 +30,10 @@ pub mod stream;
 
 /// Common types and utilities.
 pub mod prelude {
-    pub use crate::{actor::*, combinator::pipe};
+    #[cfg(feature = "std")]
+    pub use crate::combinator::{chunk, parallel};
+    pub use crate::{
+        actor::{Actor, IntoActor, State},
+        combinator::{filter, filter_map, map, pipe},
+    };
 }

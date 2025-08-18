@@ -184,6 +184,16 @@ where
     }
 }
 
+#[cfg(feature = "std")]
+/// Creates a `Parallel` actor that runs `n` instances of the given actor in
+/// parallel.
+pub fn parallel<A>(actor: A, workers: usize) -> Parallel<A>
+where
+    A: Actor + Clone,
+{
+    Parallel { actor, workers }
+}
+
 impl<A, F, B> Actor for Map<A, F>
 where
     A: Actor,
