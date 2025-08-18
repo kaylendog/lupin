@@ -55,8 +55,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use futures_lite::stream;
+
+    use super::*;
 
     #[tokio::test]
     async fn iter() {
