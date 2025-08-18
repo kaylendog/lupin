@@ -59,6 +59,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(feature = "std")]
     #[tokio::test]
     async fn iter() {
         let test_stream = stream::iter(vec![1, 2, 3]);
