@@ -4,7 +4,7 @@ use core::marker::PhantomData;
 
 use crate::actor::{Actor, IntoActor, State};
 
-/// A concrete wrapper around a [`Functional`].
+/// A concrete wrapper around any function that can be converted into an actor.
 #[derive(Clone)]
 pub struct FunctionalActor<Marker, F> {
     pub(crate) func: F,
