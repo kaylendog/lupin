@@ -55,6 +55,17 @@ fn combined() -> impl Actor {
 }
 ```
 
+## Embedded Environments
+
+Since `lupin` uses `futures_lite`, it supports `no_std` environments out of the box, optionally without allocation. Features requiring allocation can be disabled in `Cargo.toml`:
+
+```toml
+[dependencies.lupin]
+default-features = false
+```
+
+Some combinators or utilities that require OS-level async runtimes (like Tokio) or allocation may not be available, but core actor composition and message processing remain fully supported.
+
 ## Mutable Actors
 
 In addition to immutable actors, Lupin supports **mutable actors** for scenarios where state needs to be maintained across messages. Mutable actors are defined as asynchronous functions that operate on a mutable state and process input messages.
