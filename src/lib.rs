@@ -7,7 +7,7 @@
 //! messages asynchronously. This module defines traits and implementations to
 //! facilitate the creation and composition of such actors.
 //!
-//! // Example
+//! # Example
 //!
 //! ```
 //! use fenrir::prelude::*;
@@ -20,7 +20,10 @@
 //! async fn main() {}
 //! ```
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![no_std]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 pub mod actor;
 pub mod combinator;
@@ -28,7 +31,7 @@ pub mod numeric;
 
 /// Common types and utilities.
 pub mod prelude {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     pub use crate::combinator::{chunk, parallel};
     pub use crate::{
         actor::{Actor, IntoActor, State},

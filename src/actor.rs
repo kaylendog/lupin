@@ -7,7 +7,7 @@ use core::{
 
 use futures_lite::{Stream, StreamExt};
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use crate::combinator::{Chunk, Parallel};
 use crate::combinator::{Filter, FilterMap, Map, Pipe};
 
@@ -90,7 +90,7 @@ pub trait Actor {
     /// ```rust,ignore
     /// let chunked = actor.chunk(10);
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn chunk(self, size: usize) -> Chunk<Self>
     where
         Self: Sized,
@@ -110,7 +110,7 @@ pub trait Actor {
     /// ```rust,ignore
     /// let parallel = actor.parallel(4);
     /// ```
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn parallel(self, n: usize) -> Parallel<Self>
     where
         Self: Sized + Clone,
@@ -161,7 +161,7 @@ pub trait IntoActor<Marker> {
     }
 
     /// See [`Actor::chunk`].
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn chunk(self, size: usize) -> Chunk<Self::IntoActor>
     where
         Self: Sized,
@@ -170,7 +170,7 @@ pub trait IntoActor<Marker> {
     }
 
     /// See [`Actor::parallel`].
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     fn parallel(self, n: usize) -> Parallel<Self::IntoActor>
     where
         Self: Sized + Clone,
@@ -385,9 +385,11 @@ mod tests {
         assert_eq!(2, rx.recv().await.unwrap().0);
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[tokio::test]
     async fn test_stream_iter() {
+        use alloc::vec;
+
         let test_stream = futures_lite::stream::iter(vec![1, 2, 3]);
         let stream_actor = test_stream.into_actor();
 

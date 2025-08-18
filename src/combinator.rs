@@ -1,13 +1,15 @@
 //! Combinatorial actors that enable larger systems to be built by connecting
 //! actors together.
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use core::iter::repeat_n;
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 use itertools::Itertools;
 
 use crate::actor::{Actor, IntoActor};
@@ -66,14 +68,14 @@ where
 }
 
 /// Collect inputs into variable-size chunks.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[derive(Clone)]
 pub struct Chunk<A> {
     pub(crate) actor: A,
     pub(crate) size: usize,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<A> Actor for Chunk<A>
 where
     A: Actor,
@@ -109,20 +111,20 @@ where
 }
 
 /// Pipe the output of one actor into another.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 pub fn chunk<A>(actor: A, size: usize) -> Chunk<A> {
     Chunk { actor, size }
 }
 
 /// Run `n` instances of the given actor in parallel.
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 #[derive(Clone)]
 pub struct Parallel<A> {
     pub(crate) actor: A,
     pub(crate) workers: usize,
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<A> Actor for Parallel<A>
 where
     A: Actor + Clone,
@@ -184,7 +186,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 /// Creates a `Parallel` actor that runs `n` instances of the given actor in
 /// parallel.
 pub fn parallel<A>(actor: A, workers: usize) -> Parallel<A>
@@ -334,11 +336,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "std")]
-    use std::time::Duration;
+    use core::time::Duration;
 
-    #[cfg(feature = "std")]
-    use rand::Rng;
+    #[cfg(feature = "alloc")]
+    use alloc::vec::Vec;
 
     use crate::actor::{Actor, IntoActor};
 
@@ -354,16 +355,19 @@ mod tests {
         x * 2
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     async fn sum(items: Vec<usize>) -> usize {
         items.iter().sum()
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     async fn delay(x: usize) -> usize {
         // generate the rng then drop it immediately to avoid holding it across thread
         // boundaries
-        let millis = { Duration::from_millis(rand::rng().random_range(0..1000)) };
+        let millis = {
+            use rand::Rng;
+            Duration::from_millis(rand::rng().random_range(0..1000))
+        };
         tokio::time::sleep(millis).await;
         x
     }
@@ -378,9 +382,11 @@ mod tests {
         assert_eq!(4, rx.recv().await.unwrap());
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[tokio::test]
     async fn chunk() {
+        use alloc::vec;
+
         let (task, tx, rx) = identity.chunk(3).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
@@ -397,19 +403,15 @@ mod tests {
         assert_eq!(6, rx.recv().await.unwrap());
     }
 
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     #[tokio::test]
     async fn parallel() {
-        let (task, tx, rx) = delay.parallel(3).build();
+        let (task, tx, _) = delay.parallel(3).build();
         tokio::spawn(task);
 
         tx.send(1).await.unwrap();
         tx.send(2).await.unwrap();
         tx.send(3).await.unwrap();
-
-        println!("{}", rx.recv().await.unwrap());
-        println!("{}", rx.recv().await.unwrap());
-        println!("{}", rx.recv().await.unwrap());
     }
 
     #[tokio::test]
