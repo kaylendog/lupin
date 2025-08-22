@@ -20,7 +20,7 @@ use crate::combinator::{Filter, FilterMap, Map, Pipe};
 /// # Type Parameters
 /// - `I`: The input message type. Must implement [`Send`].
 /// - `O`: The output message type. Must implement [`Send`].
-pub trait Actor {
+pub trait Actor<Marker> {
     /// The actor's internal state.
     ///
     /// This type can be used to store any state required by the actor during
@@ -69,13 +69,12 @@ pub trait Actor {
     /// ```rust,ignore
     /// let pipeline = actor1.pipe(actor2);
     /// ```
-    fn pipe<T, Marker>(self, other: T) -> Pipe<Self, T::IntoActor>
+    fn pipe<MT, T>(self, other: T) -> Pipe<Self, T>
     where
         Self: Sized,
-        T: IntoActor<Marker>,
-        T::IntoActor: Actor<Input = Self::Output>,
+        T: Actor<MT, Input = Self::Output>,
     {
-        Pipe { first: self, second: other.into_actor() }
+        Pipe { first: self, second: other }
     }
 
     /// Groups up to `size` results from this actor into chunks.
@@ -133,76 +132,52 @@ pub trait Actor {
     /// ```rust,ignore
     /// let filtered = actor.filter(|msg| msg.is_valid());
     /// ```
-    fn filter<F>(self, predicate: F) -> crate::combinator::Filter<Self, F>
+    fn filter<F>(self, predicate: F) -> Filter<Self, F>
     where
         Self: Sized,
         F: Fn(&Self::Output) -> bool + Send + Sync + 'static,
     {
         Filter { actor: self, predicate }
     }
-}
 
-/// Conversion trait to turn something into an [`Actor`].
-pub trait IntoActor<Marker> {
-    /// The type of [`Actor`] that this instance converts into.
-    type IntoActor: Actor;
-
-    /// Turns this value into its corresponding [`Actor`].
-    fn into_actor(self) -> Self::IntoActor;
-
-    /// See [`Actor::pipe`].
-    fn pipe<T, TM>(self, other: T) -> Pipe<Self::IntoActor, T::IntoActor>
+    /// Maps output messages from this actor using a function.
+    ///
+    /// # Arguments
+    /// - `f`: A function or closure that takes an output message and returns a new value.
+    ///
+    /// # Returns
+    /// A [`crate::combinator::Map`] combinator that transforms output messages.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let mapped = actor.map(|msg| msg.to_string());
+    /// ```
+    fn map<F, T>(self, func: F) -> Map<Self, F>
     where
         Self: Sized,
-        T: IntoActor<TM>,
-        T::IntoActor: Actor<Input = <Self::IntoActor as Actor>::Output>,
+        F: Fn(Self::Output) -> T + Send + Sync + 'static,
     {
-        Pipe { first: self.into_actor(), second: other.into_actor() }
+        Map { actor: self, func }
     }
 
-    /// See [`Actor::chunk`].
-    #[cfg(feature = "alloc")]
-    fn chunk(self, size: usize) -> Chunk<Self::IntoActor>
+    /// Applies a function that may return `Some` or `None` to each output message.
+    ///
+    /// # Arguments
+    /// - `f`: A function or closure that takes an output message and returns an `Option<T>`.
+    ///
+    /// # Returns
+    /// A [`crate::combinator::FilterMap`] combinator that transforms and filters output messages.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let filtered_mapped = actor.filter_map(|msg| if msg.is_valid() { Some(msg.value()) } else { None });
+    /// ```
+    fn filter_map<F, T>(self, func: F) -> FilterMap<Self, F>
     where
         Self: Sized,
+        F: Fn(Self::Output) -> Option<T> + Send + Sync + 'static,
     {
-        Chunk { actor: self.into_actor(), size }
-    }
-
-    /// See [`Actor::parallel`].
-    #[cfg(feature = "alloc")]
-    fn parallel(self, n: usize) -> Parallel<Self::IntoActor>
-    where
-        Self: Sized + Clone,
-    {
-        Parallel { actor: self.into_actor(), workers: n }
-    }
-
-    /// See [`Actor::filter`].
-    fn filter<F>(self, predicate: F) -> Filter<Self::IntoActor, F>
-    where
-        Self: Sized,
-        F: Fn(&<Self::IntoActor as Actor>::Output) -> bool + Send + Sync + 'static,
-    {
-        Filter { actor: self.into_actor(), predicate }
-    }
-
-    /// See [`Actor::map`].
-    fn map<F, U>(self, func: F) -> Map<Self::IntoActor, F>
-    where
-        Self: Sized,
-        F: Fn(<Self::IntoActor as Actor>::Output) -> U + Send + Sync + 'static,
-    {
-        Map { actor: self.into_actor(), func }
-    }
-
-    /// See [`Actor::filter_map`].
-    fn filter_map<F, U>(self, func: F) -> FilterMap<Self::IntoActor, F>
-    where
-        Self: Sized,
-        F: Fn(<Self::IntoActor as Actor>::Output) -> Option<U> + Send + Sync + 'static,
-    {
-        FilterMap { actor: self.into_actor(), func }
+        FilterMap { actor: self, func }
     }
 }
 
@@ -224,19 +199,9 @@ impl<'i, T: ?Sized> DerefMut for State<'i, T> {
     }
 }
 
-/// A concrete wrapper around any function that can be converted into an actor.
-#[derive(Clone)]
-pub struct FunctionalActor<Marker, F> {
-    pub(crate) func: F,
-    pub(crate) marker: PhantomData<Marker>,
-}
-
-impl<F, Fut, I, O> Actor for FunctionalActor<fn(I) -> Fut, F>
+impl<F, I, O> Actor<fn(I) -> O> for F
 where
-    F: Fn(I) -> Fut + Send,
-    Fut: Future<Output = O>,
-    I: Send,
-    O: Send,
+    F: AsyncFn(I) -> O,
 {
     type State = ();
     type Input = I;
@@ -244,13 +209,17 @@ where
 
     fn build(
         self,
-    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
         let (in_tx, in_rx) = async_channel::unbounded();
         let (out_tx, out_rx) = async_channel::unbounded();
         let fut = async move {
             loop {
                 let input = in_rx.recv().await.unwrap();
-                let output = (self.func)(input).await;
+                let output = (self)(input).await;
                 out_tx.send(output).await.unwrap();
             }
         };
@@ -258,12 +227,10 @@ where
     }
 }
 
-impl<F, S, I, O> Actor for FunctionalActor<fn(&mut S, I) -> O, F>
+impl<F, S, I, O> Actor<fn(&mut S, I) -> O> for F
 where
-    F: AsyncFn(State<'_, S>, I) -> O,
-    S: Send + Sync + Default,
-    I: Send + 'static,
-    O: Send + 'static,
+    F: AsyncFn(&mut S, I) -> O,
+    S: Default,
 {
     type State = S;
     type Input = I;
@@ -271,7 +238,11 @@ where
 
     fn build(
         self,
-    ) -> (impl Future<Output = ()>, async_channel::Sender<I>, async_channel::Receiver<O>) {
+    ) -> (
+        impl Future<Output = ()>,
+        async_channel::Sender<Self::Input>,
+        async_channel::Receiver<Self::Output>,
+    ) {
         let (in_tx, in_rx) = async_channel::unbounded();
         let (out_tx, out_rx) = async_channel::unbounded();
 
@@ -279,7 +250,7 @@ where
             let mut state = S::default();
             loop {
                 let input = in_rx.recv().await.unwrap();
-                let output = (self.func)(State(&mut state), input).await;
+                let output = (self)(&mut state, input).await;
                 out_tx.send(output).await.unwrap();
             }
         };
@@ -287,41 +258,12 @@ where
     }
 }
 
-impl<F, Fut, I, O> IntoActor<fn(I) -> Fut> for F
-where
-    F: Fn(I) -> Fut + Send,
-    Fut: Future<Output = O>,
-    I: Send,
-    O: Send,
-{
-    type IntoActor = FunctionalActor<fn(I) -> Fut, F>;
-    fn into_actor(self) -> Self::IntoActor {
-        FunctionalActor { func: self, marker: PhantomData }
-    }
-}
-
-impl<F, S, I, O> IntoActor<fn(&mut S, I) -> O> for F
-where
-    F: AsyncFn(State<'_, S>, I) -> O,
-    S: Send + Sync + Default + 'static,
-    I: Send + 'static,
-    O: Send + 'static,
-{
-    type IntoActor = FunctionalActor<fn(&mut S, I) -> O, F>;
-    fn into_actor(self) -> Self::IntoActor {
-        FunctionalActor { func: self, marker: PhantomData }
-    }
-}
-
-/// A wrapper type that turns a [`Stream`] into an actor.
-pub struct StreamActor<S> {
-    inner: S,
-}
-
 /// Marker type for stream-based actors.
-struct IsStream;
+struct IsStream<S> {
+    __marker: PhantomData<S>,
+}
 
-impl<S> Actor for StreamActor<S>
+impl<S> Actor<IsStream<S>> for S
 where
     S: Stream + Unpin,
 {
@@ -341,7 +283,7 @@ where
 
         let fut = async move {
             loop {
-                let Some(next) = self.inner.next().await else {
+                let Some(next) = self.next().await else {
                     break;
                 };
                 out_tx.send(next).await.unwrap();
@@ -351,22 +293,11 @@ where
     }
 }
 
-impl<S> IntoActor<IsStream> for S
-where
-    S: Stream + Unpin,
-{
-    type IntoActor = StreamActor<S>;
-
-    fn into_actor(self) -> Self::IntoActor {
-        StreamActor { inner: self }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::actor::{Actor, IntoActor, State};
+    use crate::actor::Actor;
 
-    async fn enumerate(mut idx: State<'_, usize>, t: usize) -> (usize, usize) {
+    async fn enumerate(idx: &mut usize, t: usize) -> (usize, usize) {
         let cur = *idx;
         *idx += 1;
         (cur, t)
@@ -374,7 +305,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stateful() {
-        let (fut, tx, rx) = enumerate.into_actor().build();
+        let (fut, tx, rx) = enumerate.build();
         tokio::task::spawn(fut);
         tx.send(0).await.unwrap();
         tx.send(0).await.unwrap();
@@ -391,9 +322,8 @@ mod tests {
         use alloc::vec;
 
         let test_stream = futures_lite::stream::iter(vec![1, 2, 3]);
-        let stream_actor = test_stream.into_actor();
 
-        let (fut, _in_tx, out_rx) = stream_actor.build();
+        let (fut, _in_tx, out_rx) = Actor::build(test_stream);
 
         tokio::spawn(fut);
 

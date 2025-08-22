@@ -9,7 +9,7 @@ use crate::actor::Actor;
 /// Trait for actors that process numeric data.
 ///
 /// Provides a method to wrap an actor with cumulative sum functionality.
-pub trait NumericActor: Actor {
+pub trait NumericActor<Marker>: Actor<Marker> {
     /// Wraps the actor with a cumulative sum processor.
     ///
     /// Returns a [`Sum`] actor that accumulates the outputs of `self`.
@@ -21,7 +21,7 @@ pub trait NumericActor: Actor {
     }
 }
 
-impl<A> NumericActor for A where A: Actor {}
+impl<Marker, A> NumericActor<Marker> for A where A: Actor<Marker> {}
 
 /// Actor that accumulates a cumulative sum of outputs from an inner actor.
 ///
@@ -31,9 +31,9 @@ pub struct Sum<A> {
     inner: A,
 }
 
-impl<A, U, T> Actor for Sum<A>
+impl<MA, A, U, T> Actor<MA> for Sum<A>
 where
-    A: Actor<Input = U, Output = T>,
+    A: Actor<MA, Input = U, Output = T>,
     T: AddAssign + Copy + Default,
 {
     type State = T;
@@ -68,27 +68,16 @@ where
 /// Functional combinator that creates a cumulative sum actor from any actor.
 ///
 /// This function takes an actor and returns a [`Sum`] actor that accumulates the outputs.
-///
-/// # Example
-/// ```
-/// use your_crate::{sum, NumericActor, Actor};
-///
-/// let my_actor = ...; // some actor implementing Actor
-/// let sum_actor = sum(my_actor);
-/// ```
-pub fn sum<A>(actor: A) -> Sum<A>
+pub fn sum<MA, A>(actor: A) -> Sum<A>
 where
-    A: Actor,
+    A: Actor<MA>,
 {
     Sum { inner: actor }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        actor::{Actor, IntoActor},
-        numeric::NumericActor,
-    };
+    use crate::{actor::Actor, numeric::NumericActor};
 
     async fn one(_: ()) -> usize {
         1
@@ -96,7 +85,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sum() {
-        let (fut, tx, rx) = one.into_actor().sum().build();
+        let (fut, tx, rx) = one.sum().build();
         tokio::spawn(fut);
         tx.send(()).await.unwrap();
         tx.send(()).await.unwrap();

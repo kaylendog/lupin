@@ -12,7 +12,7 @@ use futures_lite::FutureExt;
 #[cfg(feature = "alloc")]
 use itertools::Itertools;
 
-use crate::actor::{Actor, IntoActor};
+use crate::actor::Actor;
 
 /// Pipes the output of one actor into another.
 ///
@@ -20,19 +20,15 @@ use crate::actor::{Actor, IntoActor};
 /// first is sent as input to the second. The `Pipe` struct holds both actors
 /// internally.
 #[derive(Clone)]
-pub struct Pipe<A, B>
-where
-    A: Actor,
-    B: Actor<Input = A::Output>,
-{
+pub struct Pipe<A, B> {
     pub(crate) first: A,
     pub(crate) second: B,
 }
 
-impl<A, B> Actor for Pipe<A, B>
+impl<MA, MB, A, B> Actor<(MA, MB)> for Pipe<A, B>
 where
-    A: Actor,
-    B: Actor<Input = A::Output>,
+    A: Actor<MA>,
+    B: Actor<MB, Input = A::Output>,
 {
     type State = ();
     type Input = A::Input;
@@ -57,14 +53,12 @@ where
 }
 
 /// Pipe the output of one actor into another.
-pub fn pipe<A, B, MA, MB>(first: A, second: B) -> Pipe<A::IntoActor, B::IntoActor>
+pub fn pipe<A, B, MA, MB>(first: A, second: B) -> Pipe<A, B>
 where
-    A: IntoActor<MA>,
-    B: IntoActor<MB>,
-    A::IntoActor: Actor,
-    B::IntoActor: Actor<Input = <A::IntoActor as Actor>::Output>,
+    A: Actor<MA>,
+    B: Actor<MB, Output = A::Input>,
 {
-    Pipe { first: first.into_actor(), second: second.into_actor() }
+    Pipe { first, second }
 }
 
 /// Collect inputs into variable-size chunks.
@@ -76,9 +70,9 @@ pub struct Chunk<A> {
 }
 
 #[cfg(feature = "alloc")]
-impl<A> Actor for Chunk<A>
+impl<MA, A> Actor<MA> for Chunk<A>
 where
-    A: Actor,
+    A: Actor<MA>,
 {
     type State = ();
     type Input = A::Input;
@@ -125,9 +119,9 @@ pub struct Parallel<A> {
 }
 
 #[cfg(feature = "alloc")]
-impl<A> Actor for Parallel<A>
+impl<MA, A> Actor<MA> for Parallel<A>
 where
-    A: Actor + Clone,
+    A: Actor<MA> + Clone,
 {
     type State = ();
     type Input = A::Input;
@@ -189,16 +183,16 @@ where
 #[cfg(feature = "alloc")]
 /// Creates a `Parallel` actor that runs `n` instances of the given actor in
 /// parallel.
-pub fn parallel<A>(actor: A, workers: usize) -> Parallel<A>
+pub fn parallel<MA, A>(actor: A, workers: usize) -> Parallel<A>
 where
-    A: Actor + Clone,
+    A: Actor<MA> + Clone,
 {
     Parallel { actor, workers }
 }
 
-impl<A, F, B> Actor for Map<A, F>
+impl<MA, A, F, B> Actor<MA> for Map<A, F>
 where
-    A: Actor,
+    A: Actor<MA>,
     F: Fn(A::Output) -> B + Send + Sync + 'static,
     B: Send + 'static,
 {
@@ -227,9 +221,9 @@ where
 }
 
 /// Apply a mapping function to the output of an actor.
-pub fn map<A, F, B>(actor: A, mapper: F) -> Map<A, F>
+pub fn map<MA, A, F, B>(actor: A, mapper: F) -> Map<A, F>
 where
-    A: Actor,
+    A: Actor<MA>,
     F: Fn(A::Output) -> B + Send + Sync + 'static,
     B: Send + 'static,
 {
@@ -242,9 +236,9 @@ pub struct Filter<A, P> {
     pub(crate) actor: A,
     pub(crate) predicate: P,
 }
-impl<A, P> Actor for Filter<A, P>
+impl<MA, A, P> Actor<MA> for Filter<A, P>
 where
-    A: Actor,
+    A: Actor<MA>,
     P: Fn(&A::Output) -> bool + Send + Sync + 'static,
 {
     type State = ();
@@ -292,9 +286,9 @@ pub struct FilterMap<A, F> {
     pub(crate) func: F,
 }
 
-impl<A, F, B> Actor for FilterMap<A, F>
+impl<MA, A, F, B> Actor<MA> for FilterMap<A, F>
 where
-    A: Actor,
+    A: Actor<MA>,
     F: Fn(A::Output) -> Option<B> + Send + Sync + 'static,
     B: Send + 'static,
 {
@@ -325,9 +319,9 @@ where
 }
 
 /// Apply a filter and mapping function to the output of an actor.
-pub fn filter_map<A, F, B>(actor: A, filter_mapper: F) -> FilterMap<A, F>
+pub fn filter_map<MA, A, F, B>(actor: A, filter_mapper: F) -> FilterMap<A, F>
 where
-    A: Actor,
+    A: Actor<MA>,
     F: Fn(A::Output) -> Option<B> + Send + Sync + 'static,
     B: Send + 'static,
 {
@@ -340,7 +334,7 @@ mod tests {
     use alloc::vec::Vec;
     use core::time::Duration;
 
-    use crate::actor::{Actor, IntoActor};
+    use crate::actor::Actor;
 
     async fn identity(x: usize) -> usize {
         x
@@ -373,8 +367,6 @@ mod tests {
 
     #[tokio::test]
     async fn pipe() {
-        add1.into_actor();
-
         let (task, tx, rx) = add1.pipe(mul2).build();
         tokio::spawn(task);
         tx.send(1).await.unwrap();
@@ -433,8 +425,7 @@ mod tests {
     #[tokio::test]
     async fn map() {
         // Mapping function: multiply by 10
-        let multiply_by_10 = |x: usize| x * 10;
-        let (task, tx, rx) = identity.map(multiply_by_10).build();
+        let (task, tx, rx) = identity.map(|x| x * 10).build();
         tokio::spawn(task);
 
         tx.send(1).await.unwrap();
