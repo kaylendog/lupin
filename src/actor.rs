@@ -143,7 +143,8 @@ pub trait Actor<Marker> {
     /// Maps output messages from this actor using a function.
     ///
     /// # Arguments
-    /// - `f`: A function or closure that takes an output message and returns a new value.
+    /// - `f`: A function or closure that takes an output message and returns a
+    ///   new value.
     ///
     /// # Returns
     /// A [`crate::combinator::Map`] combinator that transforms output messages.
@@ -160,13 +161,16 @@ pub trait Actor<Marker> {
         Map { actor: self, func }
     }
 
-    /// Applies a function that may return `Some` or `None` to each output message.
+    /// Applies a function that may return `Some` or `None` to each output
+    /// message.
     ///
     /// # Arguments
-    /// - `f`: A function or closure that takes an output message and returns an `Option<T>`.
+    /// - `f`: A function or closure that takes an output message and returns an
+    ///   `Option<T>`.
     ///
     /// # Returns
-    /// A [`crate::combinator::FilterMap`] combinator that transforms and filters output messages.
+    /// A [`crate::combinator::FilterMap`] combinator that transforms and
+    /// filters output messages.
     ///
     /// # Example
     /// ```rust,ignore

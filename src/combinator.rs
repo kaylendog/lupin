@@ -4,13 +4,14 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
-use core::iter::repeat_n;
+use core::{iter::repeat_n, marker::PhantomData};
 
 #[cfg(feature = "alloc")]
 use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
 #[cfg(feature = "alloc")]
 use itertools::Itertools;
+use paste::paste;
 
 use crate::actor::Actor;
 
@@ -327,6 +328,98 @@ where
 {
     FilterMap { actor, func: filter_mapper }
 }
+
+/// Broadcasts each input to multiple output receivers.
+///
+/// This actor receives inputs and sends each input to all output receivers.
+/// Useful for scenarios where multiple consumers need to receive the same data.
+#[cfg(feature = "alloc")]
+pub struct Broadcast<I, O, A> {
+    pub(crate) __marker: PhantomData<(I, O)>,
+    pub(crate) actors: A,
+}
+
+macro_rules! impl_broadcast_actor {
+    ($($name:ident),+) => {
+        paste! {
+            #[cfg(feature = "alloc")]
+            impl<I, O, $($name),+> Actor<($($name,)+)> for Broadcast<I, O, ($($name,)+)>
+            where
+                $($name: Actor<(), Input = I, Output = O>,)+
+                I: Clone,
+            {
+                type State = ();
+                type Input = I;
+                type Output = O;
+
+                fn build(
+                    self,
+                ) -> (
+                    impl Future<Output = ()>,
+                    async_channel::Sender<Self::Input>,
+                    async_channel::Receiver<Self::Output>,
+                ) {
+                    let actors_tuple = self.actors;
+                    #[allow(non_snake_case)]
+                    let ($($name,)+) = actors_tuple;
+                    $(
+                        #[allow(non_snake_case)]
+                        let ([<fut_ $name>], [<tx_ $name>], [<rx_ $name>]) = $name.build();
+                    )+
+
+                    let (in_tx, in_rx) = async_channel::unbounded();
+                    let (out_tx, out_rx) = async_channel::unbounded();
+
+                    let child_futs = async move {
+                        ($([<fut_ $name>],)+).join().await;
+                    };
+
+                    let input_fut = async move {
+                        loop {
+                            let item: I = in_rx.recv().await.unwrap();
+                            $(
+                                [<tx_ $name>].send(item.clone()).await.unwrap();
+                            )+
+                        }
+                    };
+
+                    $(
+                        let out_tx_inner = out_tx.clone();
+                        #[allow(non_snake_case)]
+                        let [<output_fut_ $name>] = async move {
+                            loop {
+                                out_tx_inner.send([<rx_ $name>].recv().await.unwrap()).await.unwrap();
+                            }
+                        };
+                    )+
+
+                    let output_futs = async move {
+                        ($([<output_fut_ $name>],)+).join().await;
+                    };
+
+                    let fut = child_futs
+                        .or(input_fut)
+                        .or(output_futs);
+
+                    (fut, in_tx, out_rx)
+                }
+            }
+        }
+    }
+}
+
+impl_broadcast_actor!(A);
+impl_broadcast_actor!(A, B);
+impl_broadcast_actor!(A, B, C);
+impl_broadcast_actor!(A, B, C, D);
+impl_broadcast_actor!(A, B, C, D, E);
+impl_broadcast_actor!(A, B, C, D, E, F);
+impl_broadcast_actor!(A, B, C, D, E, F, G);
+impl_broadcast_actor!(A, B, C, D, E, F, G, H);
+impl_broadcast_actor!(A, B, C, D, E, F, G, H, II);
+impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J);
+impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J, K);
+impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J, K, L);
 
 #[cfg(test)]
 mod tests {

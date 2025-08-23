@@ -67,7 +67,8 @@ where
 
 /// Functional combinator that creates a cumulative sum actor from any actor.
 ///
-/// This function takes an actor and returns a [`Sum`] actor that accumulates the outputs.
+/// This function takes an actor and returns a [`Sum`] actor that accumulates
+/// the outputs.
 pub fn sum<MA, A>(actor: A) -> Sum<A>
 where
     A: Actor<MA>,
