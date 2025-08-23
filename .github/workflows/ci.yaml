@@ -22,7 +22,7 @@ jobs:
         features:
           - ""
           - "--no-default-features"
-          - "--no-default-features --features std"
+          - "--no-default-features --features alloc"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
