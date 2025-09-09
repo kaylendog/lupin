@@ -37,8 +37,10 @@ pub trait Actor<Marker> {
     ///
     /// # Returns
     /// A tuple containing:
-    /// - A future representing the actor's main task, which drives the actor's logic.
-    /// - An [`ActorRef<Self::Input, Self::Output>`] for interacting with the actor.
+    /// - A future representing the actor's main task, which drives the actor's
+    ///   logic.
+    /// - An [`ActorRef<Self::Input, Self::Output>`] for interacting with the
+    ///   actor.
     ///
     /// # Example
     /// ```rust,ignore
@@ -325,7 +327,8 @@ pub enum ActorRef<I, O> {
     Closed,
     /// Represents a source actor with a receiver for output items.
     Source(async_channel::Receiver<O>),
-    /// Represents a pipeline actor with both a sender for input items and a receiver for output items.
+    /// Represents a pipeline actor with both a sender for input items and a
+    /// receiver for output items.
     Pipeline(async_channel::Sender<I>, async_channel::Receiver<O>),
 }
 
@@ -334,7 +337,8 @@ impl<I, O> ActorRef<I, O> {
     ///
     /// # Arguments
     /// - `self`: The first actor reference.
-    /// - `other`: The second actor reference, which receives the output of the first.
+    /// - `other`: The second actor reference, which receives the output of the
+    ///   first.
     ///
     /// # Returns
     /// A tuple containing:
@@ -359,13 +363,16 @@ impl<I, O> ActorRef<I, O> {
         }
     }
 
-    /// Splits the current actor reference into separate components for further composition.
+    /// Splits the current actor reference into separate components for further
+    /// composition.
     ///
     /// # Returns
     /// A tuple containing:
     /// - A new [`ActorRef`] with the same input type but a new output type.
-    /// - An [`async_channel::Receiver`] for receiving the current output messages.
-    /// - An [`async_channel::Sender`] for sending messages of the new output type.
+    /// - An [`async_channel::Receiver`] for receiving the current output
+    ///   messages.
+    /// - An [`async_channel::Sender`] for sending messages of the new output
+    ///   type.
     ///
     /// # Example
     /// ```rust,ignore
