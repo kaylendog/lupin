@@ -28,6 +28,42 @@ async fn collatz(input: &usize) -> usize {
 
 An actor runs indefinitely as long as input is available.
 
+## Types of Actor
+
+Lupin distinguishes between two primary kinds of actors:
+
+- **Source Actors**: These actors do not require external input to produce output. They are defined as asynchronous functions with no input argument. Source actors are useful for generating data streams, timers, or periodic events.
+
+  ```rust
+  async fn source() -> usize {
+      42
+  }
+  let (task, actor) = source.build();
+  tokio::spawn(task);
+  let value = actor.recv().await.unwrap();
+  ```
+
+- **Pipeline Actors**: These actors process input messages and produce output messages. They are defined as asynchronous functions that take an input (and optionally mutable state) and return an output.
+
+  ```rust
+  async fn add1(input: &usize) -> usize {
+      *input + 1
+  }
+  let (task, actor) = add1.build();
+  tokio::spawn(task);
+  actor.send(41).await.unwrap();
+  let value = actor.recv().await.unwrap(); // 42
+  ```
+
+## Interacting with Actors
+
+When you build an actor, Lupin returns an `ActorRef`, which is an enum representing a handle to the actor’s communication channels. `ActorRef` allows you to send input messages to pipeline actors and receive output messages from both source and pipeline actors.
+
+- For **Source actors**, you use `.recv().await` to pull output values.
+- For **Pipeline actors**, you use `.send(input).await` to provide input, and `.recv().await` to get the output.
+
+`ActorRef` abstracts away the underlying channels and provides a unified API for interacting with actors, making it easy to compose and connect actors in your system.
+
 ## Combinators
 
 Lupin provides a rich set of combinators to compose and transform actors:
