@@ -14,14 +14,14 @@ extern crate alloc;
 
 pub mod actor;
 pub mod combinator;
-pub mod numeric;
+// pub mod numeric;
 
 /// Common types and utilities.
 pub mod prelude {
     #[cfg(feature = "alloc")]
     pub use crate::combinator::{chunk, parallel};
     pub use crate::{
-        actor::{Actor, State},
+        actor::Actor,
         combinator::{filter, filter_map, map, pipe},
     };
 }

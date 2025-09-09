@@ -4,16 +4,11 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
-use core::{iter::repeat_n, marker::PhantomData};
+use core::marker::PhantomData;
 
-#[cfg(feature = "alloc")]
-use futures_concurrency::future::Join;
 use futures_lite::FutureExt;
-#[cfg(feature = "alloc")]
-use itertools::Itertools;
-use paste::paste;
 
-use crate::actor::Actor;
+use crate::actor::{Actor, ActorRef};
 
 /// Pipes the output of one actor into another.
 ///
@@ -35,21 +30,16 @@ where
     type Input = A::Input;
     type Output = B::Output;
 
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let (first_fut, first_in, first_out) = self.first.build();
-        let (second_fut, second_in, second_out) = self.second.build();
+    fn build(self) -> (impl Future<Output = ()>, ActorRef<Self::Input, Self::Output>) {
+        let (first_fut, first_ref) = self.first.build();
+        let (second_fut, second_ref) = self.second.build();
+        let (out_ref, in_rx, out_tx) = first_ref.pipe(second_ref);
         let fut = async move {
             loop {
-                second_in.send(first_out.recv().await.unwrap()).await.unwrap();
+                out_tx.send(in_rx.recv().await.unwrap()).await.unwrap();
             }
         };
-        (first_fut.or(second_fut).or(fut), first_in, second_out)
+        (first_fut.or(fut).or(second_fut), out_ref)
     }
 }
 
@@ -79,20 +69,15 @@ where
     type Input = A::Input;
     type Output = Vec<A::Output>;
 
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let (child_fut, child_tx, child_rx) = self.actor.build();
-        let (tx, rx) = async_channel::unbounded();
+    fn build(self) -> (impl Future<Output = ()>, ActorRef<Self::Input, Self::Output>) {
+        let (child_fut, child_ref) = self.actor.build();
+        let (out_ref, rx, tx) = child_ref.splice();
+
         let fut = async move {
             let mut buffer = Vec::with_capacity(self.size);
             loop {
                 // fill buffer to capacity
-                buffer.push(child_rx.recv().await.unwrap());
+                buffer.push(rx.recv().await.unwrap());
                 if buffer.len() < self.size {
                     continue;
                 }
@@ -101,7 +86,7 @@ where
                 buffer = Vec::with_capacity(self.size);
             }
         };
-        (child_fut.or(fut), child_tx, rx)
+        (child_fut.or(fut), out_ref)
     }
 }
 
@@ -117,68 +102,6 @@ pub fn chunk<A>(actor: A, size: usize) -> Chunk<A> {
 pub struct Parallel<A> {
     pub(crate) actor: A,
     pub(crate) workers: usize,
-}
-
-#[cfg(feature = "alloc")]
-impl<MA, A> Actor<MA> for Parallel<A>
-where
-    A: Actor<MA> + Clone,
-{
-    type State = ();
-    type Input = A::Input;
-    type Output = A::Output;
-
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let mut worker_futs = Vec::with_capacity(self.workers);
-        let mut worker_inputs = Vec::with_capacity(self.workers);
-        let mut worker_outputs = Vec::with_capacity(self.workers);
-
-        for (fut, tx, rx) in repeat_n(self.actor, self.workers).map(|actor| actor.build()) {
-            worker_futs.push(fut);
-            worker_inputs.push(tx);
-            worker_outputs.push(rx);
-        }
-
-        let (in_tx, in_rx) = async_channel::unbounded();
-        let (out_tx, out_rx) = async_channel::unbounded();
-
-        let poll_fut = async {
-            worker_futs.join().await;
-        };
-
-        let input_fut = async move {
-            let mut position = 0;
-            loop {
-                let input = in_rx.recv().await.unwrap();
-                let worker = &worker_inputs[position];
-                worker.send(input).await.unwrap();
-                position = (position + 1) % worker_inputs.len();
-            }
-        };
-
-        let output_fut = worker_outputs
-            .into_iter()
-            .map(|rx| {
-                let out_tx = out_tx.clone();
-                async move {
-                    loop {
-                        out_tx.send(rx.recv().await.unwrap()).await.unwrap()
-                    }
-                }
-            })
-            .collect_vec();
-        let output_fut = async {
-            output_fut.join().await;
-        };
-
-        (poll_fut.or(input_fut).or(output_fut), in_tx, out_rx)
-    }
 }
 
 #[cfg(feature = "alloc")]
@@ -201,23 +124,17 @@ where
     type Input = A::Input;
     type Output = B;
 
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let (child_fut, child_tx, child_rx) = self.actor.build();
-        let (tx, rx) = async_channel::unbounded();
+    fn build(self) -> (impl Future<Output = ()>, ActorRef<Self::Input, Self::Output>) {
+        let (child_fut, child_ref) = self.actor.build();
+        let (out_ref, rx, tx) = child_ref.splice();
         let mapper = self.func;
         let fut = async move {
             loop {
-                let item = child_rx.recv().await.unwrap();
+                let item = rx.recv().await.unwrap();
                 tx.send(mapper(item)).await.unwrap();
             }
         };
-        (child_fut.or(fut), child_tx, rx)
+        (child_fut.or(fut), out_ref)
     }
 }
 
@@ -237,6 +154,7 @@ pub struct Filter<A, P> {
     pub(crate) actor: A,
     pub(crate) predicate: P,
 }
+
 impl<MA, A, P> Actor<MA> for Filter<A, P>
 where
     A: Actor<MA>,
@@ -246,25 +164,19 @@ where
     type Input = A::Input;
     type Output = A::Output;
 
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let (child_fut, child_tx, child_rx) = self.actor.build();
-        let (tx, rx) = async_channel::unbounded();
+    fn build(self) -> (impl Future<Output = ()>, ActorRef<Self::Input, Self::Output>) {
+        let (child_fut, child_ref) = self.actor.build();
+        let (out_ref, rx, tx) = child_ref.splice();
         let predicate = self.predicate;
         let fut = async move {
             loop {
-                let item = child_rx.recv().await.unwrap();
+                let item = rx.recv().await.unwrap();
                 if predicate(&item) {
                     tx.send(item).await.unwrap();
                 }
             }
         };
-        (child_fut.or(fut), child_tx, rx)
+        (child_fut.or(fut), out_ref)
     }
 }
 
@@ -297,25 +209,19 @@ where
     type Input = A::Input;
     type Output = B;
 
-    fn build(
-        self,
-    ) -> (
-        impl Future<Output = ()>,
-        async_channel::Sender<Self::Input>,
-        async_channel::Receiver<Self::Output>,
-    ) {
-        let (child_fut, child_tx, child_rx) = self.actor.build();
-        let (tx, rx) = async_channel::unbounded();
+    fn build(self) -> (impl Future<Output = ()>, ActorRef<Self::Input, Self::Output>) {
+        let (child_fut, child_ref) = self.actor.build();
+        let (out_ref, rx, tx) = child_ref.splice();
         let filter_mapper = self.func;
         let fut = async move {
             loop {
-                let item = child_rx.recv().await.unwrap();
+                let item = rx.recv().await.unwrap();
                 if let Some(mapped) = filter_mapper(item) {
                     tx.send(mapped).await.unwrap();
                 }
             }
         };
-        (child_fut.or(fut), child_tx, rx)
+        (child_fut.or(fut), out_ref)
     }
 }
 
@@ -339,88 +245,6 @@ pub struct Broadcast<I, O, A> {
     pub(crate) actors: A,
 }
 
-macro_rules! impl_broadcast_actor {
-    ($($name:ident),+) => {
-        paste! {
-            #[cfg(feature = "alloc")]
-            impl<I, O, $($name),+> Actor<($($name,)+)> for Broadcast<I, O, ($($name,)+)>
-            where
-                $($name: Actor<(), Input = I, Output = O>,)+
-                I: Clone,
-            {
-                type State = ();
-                type Input = I;
-                type Output = O;
-
-                fn build(
-                    self,
-                ) -> (
-                    impl Future<Output = ()>,
-                    async_channel::Sender<Self::Input>,
-                    async_channel::Receiver<Self::Output>,
-                ) {
-                    let actors_tuple = self.actors;
-                    #[allow(non_snake_case)]
-                    let ($($name,)+) = actors_tuple;
-                    $(
-                        #[allow(non_snake_case)]
-                        let ([<fut_ $name>], [<tx_ $name>], [<rx_ $name>]) = $name.build();
-                    )+
-
-                    let (in_tx, in_rx) = async_channel::unbounded();
-                    let (out_tx, out_rx) = async_channel::unbounded();
-
-                    let child_futs = async move {
-                        ($([<fut_ $name>],)+).join().await;
-                    };
-
-                    let input_fut = async move {
-                        loop {
-                            let item: I = in_rx.recv().await.unwrap();
-                            $(
-                                [<tx_ $name>].send(item.clone()).await.unwrap();
-                            )+
-                        }
-                    };
-
-                    $(
-                        let out_tx_inner = out_tx.clone();
-                        #[allow(non_snake_case)]
-                        let [<output_fut_ $name>] = async move {
-                            loop {
-                                out_tx_inner.send([<rx_ $name>].recv().await.unwrap()).await.unwrap();
-                            }
-                        };
-                    )+
-
-                    let output_futs = async move {
-                        ($([<output_fut_ $name>],)+).join().await;
-                    };
-
-                    let fut = child_futs
-                        .or(input_fut)
-                        .or(output_futs);
-
-                    (fut, in_tx, out_rx)
-                }
-            }
-        }
-    }
-}
-
-impl_broadcast_actor!(A);
-impl_broadcast_actor!(A, B);
-impl_broadcast_actor!(A, B, C);
-impl_broadcast_actor!(A, B, C, D);
-impl_broadcast_actor!(A, B, C, D, E);
-impl_broadcast_actor!(A, B, C, D, E, F);
-impl_broadcast_actor!(A, B, C, D, E, F, G);
-impl_broadcast_actor!(A, B, C, D, E, F, G, H);
-impl_broadcast_actor!(A, B, C, D, E, F, G, H, II);
-impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J);
-impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J, K);
-impl_broadcast_actor!(A, B, C, D, E, F, G, H, II, J, K, L);
-
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "alloc")]
@@ -429,25 +253,25 @@ mod tests {
 
     use crate::actor::Actor;
 
-    async fn identity(x: usize) -> usize {
-        x
+    async fn identity(x: &usize) -> usize {
+        *x
     }
 
-    async fn add1(x: usize) -> usize {
+    async fn add1(x: &usize) -> usize {
         x + 1
     }
 
-    async fn mul2(x: usize) -> usize {
+    async fn mul2(x: &usize) -> usize {
         x * 2
     }
 
     #[cfg(feature = "alloc")]
-    async fn sum(items: Vec<usize>) -> usize {
+    async fn sum(items: &Vec<usize>) -> usize {
         items.iter().sum()
     }
 
     #[cfg(feature = "alloc")]
-    async fn delay(x: usize) -> usize {
+    async fn delay(x: &usize) -> usize {
         // generate the rng then drop it immediately to avoid holding it across thread
         // boundaries
         let millis = {
@@ -455,15 +279,15 @@ mod tests {
             Duration::from_millis(rand::rng().random_range(0..1000))
         };
         tokio::time::sleep(millis).await;
-        x
+        *x
     }
 
     #[tokio::test]
     async fn pipe() {
-        let (task, tx, rx) = add1.pipe(mul2).build();
+        let (task, actor) = add1.pipe(mul2).build();
         tokio::spawn(task);
-        tx.send(1).await.unwrap();
-        assert_eq!(4, rx.recv().await.unwrap());
+        actor.send(1).await.unwrap();
+        assert_eq!(4, actor.recv().await.unwrap());
     }
 
     #[cfg(feature = "alloc")]
@@ -471,79 +295,78 @@ mod tests {
     async fn chunk() {
         use alloc::vec;
 
-        let (task, tx, rx) = identity.chunk(3).build();
+        let (task, actor) = identity.chunk(3).build();
         tokio::spawn(task);
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
-        assert_eq!(vec![1, 2, 3], rx.recv().await.unwrap());
+        actor.send(1).await.unwrap();
+        actor.send(2).await.unwrap();
+        actor.send(3).await.unwrap();
+        assert_eq!(vec![1, 2, 3], actor.recv().await.unwrap());
 
         // with sum
-        let (task, tx, rx) = identity.chunk(3).pipe(sum).build();
+        let (task, actor) = identity.chunk(3).pipe(sum).build();
         tokio::spawn(task);
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
-        assert_eq!(6, rx.recv().await.unwrap());
+        actor.send(1).await.unwrap();
+        actor.send(2).await.unwrap();
+        actor.send(3).await.unwrap();
+        assert_eq!(6, actor.recv().await.unwrap());
     }
 
-    #[cfg(feature = "alloc")]
-    #[tokio::test]
-    async fn parallel() {
-        let (task, tx, _) = delay.parallel(3).build();
-        tokio::spawn(task);
+    // #[cfg(feature = "alloc")]
+    // #[tokio::test]
+    // async fn parallel() {
+    //     let (task, actor) = delay.parallel(3).build();
+    //     tokio::spawn(task);
 
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
-    }
+    //     actor.send(1).await.unwrap();
+    //     actor.send(2).await.unwrap();
+    //     actor.send(3).await.unwrap();
+    // }
 
     #[tokio::test]
     async fn filter() {
         // Predicate: only allow even numbers
-        let is_even = |x: &usize| *x % 2 == 0;
-        let (task, tx, rx) = identity.filter(is_even).build();
+        let (task, actor) = identity.filter(|x: &usize| *x % 2 == 0).build();
         tokio::spawn(task);
 
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
-        tx.send(4).await.unwrap();
+        actor.send(1).await.unwrap();
+        actor.send(2).await.unwrap();
+        actor.send(3).await.unwrap();
+        actor.send(4).await.unwrap();
 
         // Only 2 and 4 should pass through
-        assert_eq!(2, rx.recv().await.unwrap());
-        assert_eq!(4, rx.recv().await.unwrap());
+        assert_eq!(2, actor.recv().await.unwrap());
+        assert_eq!(4, actor.recv().await.unwrap());
     }
 
     #[tokio::test]
     async fn map() {
         // Mapping function: multiply by 10
-        let (task, tx, rx) = identity.map(|x| x * 10).build();
+        let (task, actor) = identity.map(|x| x * 10).build();
         tokio::spawn(task);
 
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
+        actor.send(1).await.unwrap();
+        actor.send(2).await.unwrap();
+        actor.send(3).await.unwrap();
 
-        assert_eq!(10, rx.recv().await.unwrap());
-        assert_eq!(20, rx.recv().await.unwrap());
-        assert_eq!(30, rx.recv().await.unwrap());
+        assert_eq!(10, actor.recv().await.unwrap());
+        assert_eq!(20, actor.recv().await.unwrap());
+        assert_eq!(30, actor.recv().await.unwrap());
     }
 
     #[tokio::test]
     async fn filter_map() {
         // Filter and map function: only allow even numbers and divide them by 2
-        let even_and_half = |x: usize| if x % 2 == 0 { Some(x / 2) } else { None };
-        let (task, tx, rx) = identity.filter_map(even_and_half).build();
+        let (task, actor) =
+            identity.filter_map(|x: usize| if x % 2 == 0 { Some(x / 2) } else { None }).build();
         tokio::spawn(task);
 
-        tx.send(1).await.unwrap();
-        tx.send(2).await.unwrap();
-        tx.send(3).await.unwrap();
-        tx.send(4).await.unwrap();
+        actor.send(1).await.unwrap();
+        actor.send(2).await.unwrap();
+        actor.send(3).await.unwrap();
+        actor.send(4).await.unwrap();
 
         // Only 2 and 4 should pass through, mapped to 1 and 2 respectively
-        assert_eq!(1, rx.recv().await.unwrap());
-        assert_eq!(2, rx.recv().await.unwrap());
+        assert_eq!(1, actor.recv().await.unwrap());
+        assert_eq!(2, actor.recv().await.unwrap());
     }
 }
